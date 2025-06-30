@@ -19,7 +19,7 @@ use ratatui::{
 };
 
 #[derive(Debug)]
-pub(crate) struct PorcApp {
+pub(crate) struct TreetopApp {
     process_watcher: ProcessWatcher,
     forest: Forest<Process>,
     pattern: Regex,
@@ -35,9 +35,9 @@ enum UiMode {
     ProcessSelected(sysinfo::Pid),
 }
 
-impl PorcApp {
-    pub(crate) fn new(process_watcher: ProcessWatcher, pattern: Option<Regex>) -> R<PorcApp> {
-        Ok(PorcApp {
+impl TreetopApp {
+    pub(crate) fn new(process_watcher: ProcessWatcher, pattern: Option<Regex>) -> R<TreetopApp> {
+        Ok(TreetopApp {
             process_watcher,
             forest: Forest::empty(),
             pattern: pattern.unwrap_or(Regex::empty()?),
@@ -66,7 +66,7 @@ impl PorcApp {
     }
 }
 
-impl tui_app::TuiApp for PorcApp {
+impl tui_app::TuiApp for TreetopApp {
     fn update(&mut self, event: KeyEvent) -> R<UpdateResult> {
         match (event.modifiers, self.ui_mode, event.code) {
             (KeyModifiers::CONTROL, _, KeyCode::Char('c'))
@@ -303,13 +303,13 @@ mod test {
         assert_eq!(list_state.offset(), 10);
     }
 
-    fn test_app(processes: Vec<Process>) -> R<PorcApp> {
-        let mut app = PorcApp::new(ProcessWatcher::fake(processes), None)?;
+    fn test_app(processes: Vec<Process>) -> R<TreetopApp> {
+        let mut app = TreetopApp::new(ProcessWatcher::fake(processes), None)?;
         app.tick();
         Ok(app)
     }
 
-    fn render_ui(mut app: PorcApp) -> String {
+    fn render_ui(mut app: TreetopApp) -> String {
         let area = Rect::new(0, 0, 80, 10);
         let mut buffer = Buffer::filled(area, Cell::new(" "));
         app.render(area, &mut buffer);
@@ -329,7 +329,7 @@ mod test {
         result
     }
 
-    fn simulate_key_press(app: &mut PorcApp, code: KeyCode) -> R<UpdateResult> {
+    fn simulate_key_press(app: &mut TreetopApp, code: KeyCode) -> R<UpdateResult> {
         app.update(KeyEvent {
             code,
             modifiers: KeyModifiers::NONE,
@@ -338,7 +338,7 @@ mod test {
         })
     }
 
-    fn set_pattern(app: &mut PorcApp, pattern: &str) -> R<()> {
+    fn set_pattern(app: &mut TreetopApp, pattern: &str) -> R<()> {
         app.pattern = crate::regex::Regex::new(::regex::Regex::new(pattern)?);
         Ok(())
     }

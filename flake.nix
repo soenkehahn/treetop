@@ -31,10 +31,10 @@
       in
       rec {
         packages = {
-          porc = craneLib.buildPackage (commonArgs // {
+          treetop = craneLib.buildPackage (commonArgs // {
             doCheck = false;
           });
-          default = packages.porc;
+          default = packages.treetop;
         };
         checks = {
           tests = craneLib.cargoTest commonArgs;
