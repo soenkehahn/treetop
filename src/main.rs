@@ -1,14 +1,14 @@
-use crate::porc_app::PorcApp;
 use crate::process::ProcessWatcher;
 use crate::regex::Regex;
+use crate::tree_top_app::TreeTopApp;
 use clap::Parser;
 use std::error::Error;
 use sysinfo::System;
 
-mod porc_app;
 mod process;
 mod regex;
 mod tree;
+mod tree_top_app;
 mod tui_app;
 mod utils;
 
@@ -22,7 +22,7 @@ struct Args {
 
 fn main() -> R<()> {
     let args = Args::parse();
-    PorcApp::run(PorcApp::new(
+    TreeTopApp::run(TreeTopApp::new(
         ProcessWatcher::new(System::new()),
         args.pattern
             .map(|pattern| ::regex::Regex::new(&pattern).map(crate::Regex::new))
