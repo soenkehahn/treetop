@@ -1,7 +1,10 @@
+use std::process;
+
 use crate::process::ProcessWatcher;
 use crate::process::SortBy;
 use crate::regex::Regex;
 use crate::tree::Forest;
+use crate::Args;
 use crate::{
     process::Process,
     tree::Node,
@@ -21,6 +24,7 @@ use ratatui::{
 
 #[derive(Debug)]
 pub(crate) struct TreetopApp {
+    args: Args,
     process_watcher: ProcessWatcher,
     forest: Forest<Process>,
     pattern: Regex,
@@ -38,11 +42,18 @@ enum UiMode {
 }
 
 impl TreetopApp {
-    pub(crate) fn new(process_watcher: ProcessWatcher, pattern: Option<Regex>) -> R<TreetopApp> {
+    pub(crate) fn new(process_watcher: ProcessWatcher, args: Args) -> R<TreetopApp> {
+        let pattern = args
+            .pattern
+            .as_ref()
+            .map(|pattern| Regex::new(pattern))
+            .transpose()?
+            .unwrap_or(Regex::empty()?);
         Ok(TreetopApp {
+            args,
             process_watcher,
             forest: Forest::empty(),
-            pattern: pattern.unwrap_or(Regex::empty()?),
+            pattern,
             list_state: ListState::default().with_selected(Some(0)),
             ui_mode: UiMode::Normal,
             sort_column: SortBy::default(),
@@ -59,7 +70,11 @@ impl TreetopApp {
         self.forest
             .sort_by(&|a, b| Process::compare(a, b, self.sort_column));
         self.forest.filter(|p| {
-            self.pattern.is_match(&p.name) || self.pattern.is_match(&p.id().to_string())
+            p.is_match(
+                &self.pattern,
+                sysinfo::Pid::from_u32(process::id()),
+                &self.args,
+            )
         });
         if let UiMode::ProcessSelected(selected) = self.ui_mode {
             if !self.forest.iter().any(|node| node.id() == selected) {
@@ -333,8 +348,21 @@ mod test {
         assert_eq!(list_state.offset(), 10);
     }
 
+    impl Default for Args {
+        fn default() -> Self {
+            Args {
+                pattern: None,
+                dont_hide_self: false,
+            }
+        }
+    }
+
     fn test_app(processes: Vec<Process>) -> R<TreetopApp> {
-        let mut app = TreetopApp::new(ProcessWatcher::fake(processes), None)?;
+        test_app_with_args(processes, Args::default())
+    }
+
+    fn test_app_with_args(processes: Vec<Process>, args: Args) -> R<TreetopApp> {
+        let mut app = TreetopApp::new(ProcessWatcher::fake(processes), args)?;
         app.tick();
         Ok(app)
     }
@@ -467,6 +495,51 @@ mod test {
         set_pattern(&mut app, "2")?;
         app.tick();
         assert_snapshot!(render_ui(&mut app));
+        Ok(())
+    }
+
+    #[test]
+    fn filtering_by_process_arguments() -> R<()> {
+        let mut app = test_app(vec![
+            Process::fake(1, 0.0, None).set_arguments(vec!["foo"]),
+            Process::fake(2, 0.0, None).set_arguments(vec!["bar"]),
+            Process::fake(3, 0.0, None).set_arguments(vec!["baz"]),
+        ])?;
+        set_pattern(&mut app, "bar")?;
+        app.tick();
+        assert_snapshot!(render_ui(&mut app));
+        Ok(())
+    }
+
+    #[test]
+    fn filters_out_itself_by_default() -> R<()> {
+        let mut app = test_app(vec![
+            Process::fake(1, 0.0, None).set_arguments(vec!["foo"]),
+            Process::fake(std::process::id() as usize, 0.0, None).set_arguments(vec!["bar"]),
+            Process::fake(3, 0.0, None).set_arguments(vec!["baz"]),
+        ])?;
+        set_pattern(&mut app, "bar")?;
+        app.tick();
+        assert_snapshot!(render_ui(&mut app));
+        Ok(())
+    }
+
+    #[test]
+    fn does_not_filter_out_itself_when_asked_to() -> R<()> {
+        let mut app = test_app_with_args(
+            vec![
+                Process::fake(1, 0.0, None).set_arguments(vec!["foo"]),
+                Process::fake(std::process::id() as usize, 0.0, None).set_arguments(vec!["bar"]),
+                Process::fake(3, 0.0, None).set_arguments(vec!["baz"]),
+            ],
+            Args {
+                dont_hide_self: true,
+                ..Args::default()
+            },
+        )?;
+        set_pattern(&mut app, "bar")?;
+        app.tick();
+        assert!(render_ui(&mut app).contains("bar"));
         Ok(())
     }
 

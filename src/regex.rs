@@ -8,7 +8,7 @@ pub(crate) enum Regex {
 
 impl Regex {
     pub(crate) fn empty() -> R<Regex> {
-        Ok(Regex::new("")?)
+        Regex::new("")
     }
 
     pub(crate) fn new(regex: &str) -> R<Regex> {

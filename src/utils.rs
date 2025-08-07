@@ -9,7 +9,7 @@ pub(crate) mod test {
             5 => "five",
             6 => "six",
             7 => "seven",
-            n => panic!("utils::test::render_number: out of range: {}", n),
+            _ => "some-process",
         }
     }
     pub(crate) fn underline(s: &str) -> String {

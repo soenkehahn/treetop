@@ -1,5 +1,7 @@
+use crate::regex::Regex;
 pub(crate) use crate::tree::Forest;
 use crate::tree::Node;
+use crate::Args;
 use num_format::Locale;
 use num_format::ToFormattedString;
 use ratatui::buffer::Buffer;
@@ -20,7 +22,7 @@ use sysinfo::UpdateKind;
 pub(crate) struct Process {
     pid: Pid,
     pub(crate) name: String,
-    arguments: Vec<String>,
+    pub(crate) arguments: Vec<String>,
     parent: Option<Pid>,
     cpu: f32,
     ram: u64,
@@ -88,6 +90,19 @@ impl Process {
             Some(ordering) => ordering,
             None => self.pid.cmp(&other.pid),
         }
+    }
+
+    pub(crate) fn is_match(&self, pattern: &Regex, treetop_pid: Pid, args: &Args) -> bool {
+        if pattern.is_match(&self.name) {
+            return true;
+        }
+        if pattern.is_match(&self.id().to_string()) {
+            return true;
+        }
+        if pattern.is_match(&self.arguments.join(" ")) {
+            return args.dont_hide_self || treetop_pid != self.id();
+        }
+        false
     }
 
     pub(crate) fn render_header(area: Rect, sort_by: SortBy, buffer: &mut Buffer) -> u16 {
@@ -229,6 +244,7 @@ impl ProcessWatcher {
 #[cfg(test)]
 pub(crate) mod test {
     use super::*;
+    use crate::R;
 
     impl Process {
         pub(crate) fn fake(pid: usize, cpu: f32, parent: Option<usize>) -> Process {
@@ -241,11 +257,96 @@ pub(crate) mod test {
                 ram: 0,
             }
         }
+
+        pub(crate) fn set_arguments(mut self, arguments: Vec<&str>) -> Self {
+            self.arguments = arguments.into_iter().map(|x| x.to_string()).collect();
+            self
+        }
+    }
+
+    impl Default for Process {
+        fn default() -> Self {
+            Process {
+                pid: 42.into(),
+                name: "name".to_string(),
+                arguments: vec![],
+                parent: None,
+                cpu: 0.0,
+                ram: 0,
+            }
+        }
     }
 
     impl ProcessWatcher {
         pub(crate) fn fake(processes: Vec<Process>) -> ProcessWatcher {
             ProcessWatcher(ProcessWatcherInner::TestWatcher { processes })
+        }
+    }
+
+    mod is_match {
+        use super::*;
+
+        #[test]
+        fn is_match_considers_arguments() -> R<()> {
+            assert!(Process::default().set_arguments(vec!["foo"]).is_match(
+                &Regex::new("foo")?,
+                0.into(),
+                &Args::default()
+            ));
+            assert!(!Process::default().set_arguments(vec!["foo"]).is_match(
+                &Regex::new("bar")?,
+                0.into(),
+                &Args::default()
+            ));
+            assert!(Process::default()
+                .set_arguments(vec!["foobarbaz"])
+                .is_match(&Regex::new("bar")?, 0.into(), &Args::default()));
+            Ok(())
+        }
+
+        #[test]
+        fn filtering_by_matching_on_multiple_process_arguments() -> R<()> {
+            assert!(Process::default()
+                .set_arguments(vec!["foo", "bar"])
+                .is_match(&Regex::new("fo.*ar")?, 0.into(), &Args::default()));
+            assert!(Process::default()
+                .set_arguments(vec!["foo", "bar"])
+                .is_match(&Regex::new("foo bar")?, 0.into(), &Args::default()));
+            Ok(())
+        }
+
+        #[test]
+        fn is_match_hides_treetop_for_arguments() -> R<()> {
+            let process = Process {
+                pid: 42.into(),
+                name: "treetop".to_string(),
+                arguments: vec!["foo".to_string()],
+                ..Process::default()
+            };
+            assert!(!process.is_match(&Regex::new("foo")?, 42.into(), &Args::default()));
+            assert!(process.is_match(&Regex::new("foo")?, 43.into(), &Args::default()));
+            assert!(process.is_match(&Regex::new("treetop")?, 42.into(), &Args::default()));
+            assert!(process.is_match(&Regex::new("42")?, 42.into(), &Args::default()));
+            Ok(())
+        }
+
+        #[test]
+        fn is_match_shows_treetop_when_asked_to() -> R<()> {
+            let process = Process {
+                pid: 42.into(),
+                name: "treetop".to_string(),
+                arguments: vec!["foo".to_string()],
+                ..Process::default()
+            };
+            assert!(process.is_match(
+                &Regex::new("foo")?,
+                42.into(),
+                &Args {
+                    dont_hide_self: true,
+                    ..Args::default()
+                }
+            ));
+            Ok(())
         }
     }
 }
