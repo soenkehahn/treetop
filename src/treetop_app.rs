@@ -9,6 +9,7 @@ use crate::{
     R,
 };
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use nix::errno::Errno;
 use nix::sys::signal::kill;
 use ratatui::{
     buffer::Buffer,
@@ -26,6 +27,7 @@ pub(crate) struct TreetopApp {
     list_state: ListState,
     ui_mode: UiMode,
     sort_column: SortBy,
+    error_state: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -44,6 +46,7 @@ impl TreetopApp {
             list_state: ListState::default().with_selected(Some(0)),
             ui_mode: UiMode::Normal,
             sort_column: SortBy::default(),
+            error_state: None,
         })
     }
 
@@ -68,6 +71,7 @@ impl TreetopApp {
 
 impl tui_app::TuiApp for TreetopApp {
     fn update(&mut self, event: KeyEvent) -> R<UpdateResult> {
+        self.error_state = None;
         match (event.modifiers, self.ui_mode, event.code) {
             (KeyModifiers::CONTROL, _, KeyCode::Char('c'))
             | (KeyModifiers::NONE, UiMode::Normal, KeyCode::Char('q')) => {
@@ -131,17 +135,25 @@ impl tui_app::TuiApp for TreetopApp {
                     pattern.pop();
                 });
             }
-            (KeyModifiers::NONE, UiMode::ProcessSelected(pid), KeyCode::Char('t')) => {
-                kill(
+            (
+                KeyModifiers::NONE,
+                UiMode::ProcessSelected(pid),
+                KeyCode::Char(char @ ('t' | 'k')),
+            ) => {
+                match kill(
                     nix::unistd::Pid::from_raw(pid.as_u32().try_into()?),
-                    nix::sys::signal::Signal::SIGTERM,
-                )?;
-            }
-            (KeyModifiers::NONE, UiMode::ProcessSelected(pid), KeyCode::Char('k')) => {
-                kill(
-                    nix::unistd::Pid::from_raw(pid.as_u32().try_into()?),
-                    nix::sys::signal::Signal::SIGKILL,
-                )?;
+                    match char {
+                        't' => nix::sys::signal::Signal::SIGTERM,
+                        'k' => nix::sys::signal::Signal::SIGKILL,
+                        _ => unreachable!("should be 't' or 'k'"),
+                    },
+                ) {
+                    Ok(()) => {}
+                    Err(Errno::EPERM) => {
+                        self.error_state = Some("missing permissions to send signal".to_string());
+                    }
+                    Err(e) => Err(e)?,
+                };
             }
             _ => {}
         }
@@ -155,7 +167,10 @@ impl tui_app::TuiApp for TreetopApp {
             x: area.x,
             y: area.y + header_height,
             width: area.width,
-            height: area.height - header_height - 1,
+            height: area.height
+                - header_height
+                - 1
+                - if self.error_state.is_some() { 1 } else { 0 },
         };
         let list = self.forest.render_forest_prefixes();
         normalize_list_state(&mut self.list_state, &list, &list_rect);
@@ -170,7 +185,7 @@ impl tui_app::TuiApp for TreetopApp {
             });
             line.push_span(x.0.as_str().blue());
             line.push_span(if self.ui_mode == UiMode::ProcessSelected(x.1.id()) {
-                x.1.to_string().reversed().red()
+                x.1.to_string().reversed().blue()
             } else {
                 x.1.to_string().not_reversed()
             });
@@ -182,6 +197,21 @@ impl tui_app::TuiApp for TreetopApp {
             buffer,
             &mut self.list_state,
         );
+        if let Some(error) = &self.error_state {
+            Paragraph::new(format!("Error: {}", error))
+                .red()
+                .bold()
+                .reversed()
+                .render(
+                    Rect {
+                        x: area.x,
+                        y: area.height - 2,
+                        width: area.width,
+                        height: 1,
+                    },
+                    buffer,
+                );
+        }
         {
             let status_bar = match self.ui_mode {
                 UiMode::Normal => {
@@ -226,7 +256,7 @@ impl tui_app::TuiApp for TreetopApp {
                     status_bar = status_bar.yellow();
                 }
                 UiMode::ProcessSelected(_) => {
-                    status_bar = status_bar.red();
+                    status_bar = status_bar.blue();
                 }
             }
             status_bar.render(
@@ -309,7 +339,7 @@ mod test {
         Ok(app)
     }
 
-    fn render_ui(mut app: TreetopApp) -> String {
+    fn render_ui(app: &mut TreetopApp) -> String {
         let area = Rect::new(0, 0, 80, 10);
         let mut buffer = Buffer::filled(area, Cell::new(" "));
         app.render(area, &mut buffer);
@@ -345,26 +375,26 @@ mod test {
 
     #[test]
     fn shows_a_tree_with_header_and_side_columns() -> R<()> {
-        let app = test_app(vec![
+        let mut app = test_app(vec![
             Process::fake(1, 4.0, None),
             Process::fake(2, 3.0, Some(1)),
             Process::fake(3, 2.0, Some(2)),
             Process::fake(4, 1.0, None),
             Process::fake(5, 0.0, Some(4)),
         ])?;
-        assert_snapshot!(render_ui(app));
+        assert_snapshot!(render_ui(&mut app));
         Ok(())
     }
 
     #[test]
     fn processes_get_sorted_by_pid() -> R<()> {
-        let app = test_app(vec![
+        let mut app = test_app(vec![
             Process::fake(1, 1.0, None),
             Process::fake(2, 2.0, None),
             Process::fake(3, 4.0, None),
             Process::fake(4, 3.0, None),
         ])?;
-        assert_snapshot!(render_ui(app));
+        assert_snapshot!(render_ui(&mut app));
         Ok(())
     }
 
@@ -377,13 +407,13 @@ mod test {
             Process::fake(4, 3.0, None),
         ])?;
         simulate_key_press(&mut app, KeyCode::Tab)?;
-        assert_snapshot!(render_ui(app));
+        assert_snapshot!(render_ui(&mut app));
         Ok(())
     }
 
     #[test]
     fn more_complicated_tree() -> R<()> {
-        let app = test_app(vec![
+        let mut app = test_app(vec![
             Process::fake(1, 1.0, None),
             Process::fake(2, 2.0, Some(1)),
             Process::fake(3, 3.0, Some(2)),
@@ -392,7 +422,7 @@ mod test {
             Process::fake(6, 5.0, Some(4)),
             Process::fake(7, 5.0, Some(6)),
         ])?;
-        assert_snapshot!(render_ui(app));
+        assert_snapshot!(render_ui(&mut app));
         Ok(())
     }
 
@@ -409,7 +439,7 @@ mod test {
         ])?;
         set_pattern(&mut app, "four")?;
         app.tick();
-        assert_snapshot!(render_ui(app));
+        assert_snapshot!(render_ui(&mut app));
         Ok(())
     }
 
@@ -423,7 +453,7 @@ mod test {
         ])?;
         set_pattern(&mut app, "two|three")?;
         app.tick();
-        assert_snapshot!(render_ui(app));
+        assert_snapshot!(render_ui(&mut app));
         Ok(())
     }
 
@@ -436,7 +466,7 @@ mod test {
         ])?;
         set_pattern(&mut app, "2")?;
         app.tick();
-        assert_snapshot!(render_ui(app));
+        assert_snapshot!(render_ui(&mut app));
         Ok(())
     }
 
@@ -484,6 +514,16 @@ mod test {
         simulate_key_press(&mut app, KeyCode::Down)?;
         simulate_key_press(&mut app, KeyCode::Enter)?;
         assert_eq!(app.ui_mode, UiMode::ProcessSelected(2.into()));
+        Ok(())
+    }
+
+    #[test]
+    fn error_status_line() -> R<()> {
+        let mut app = test_app(vec![])?;
+        app.error_state = Some("test error".to_string());
+        assert_snapshot!(render_ui(&mut app));
+        simulate_key_press(&mut app, KeyCode::Char('&'))?;
+        assert_eq!(app.error_state, None);
         Ok(())
     }
 }
