@@ -9,6 +9,7 @@ use crate::{
     R,
 };
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use nix::errno::Errno;
 use nix::sys::signal::kill;
 use ratatui::{
     buffer::Buffer,
@@ -134,17 +135,25 @@ impl tui_app::TuiApp for TreetopApp {
                     pattern.pop();
                 });
             }
-            (KeyModifiers::NONE, UiMode::ProcessSelected(pid), KeyCode::Char('t')) => {
-                kill(
+            (
+                KeyModifiers::NONE,
+                UiMode::ProcessSelected(pid),
+                KeyCode::Char(char @ ('t' | 'k')),
+            ) => {
+                match kill(
                     nix::unistd::Pid::from_raw(pid.as_u32().try_into()?),
-                    nix::sys::signal::Signal::SIGTERM,
-                )?;
-            }
-            (KeyModifiers::NONE, UiMode::ProcessSelected(pid), KeyCode::Char('k')) => {
-                kill(
-                    nix::unistd::Pid::from_raw(pid.as_u32().try_into()?),
-                    nix::sys::signal::Signal::SIGKILL,
-                )?;
+                    match char {
+                        't' => nix::sys::signal::Signal::SIGTERM,
+                        'k' => nix::sys::signal::Signal::SIGKILL,
+                        _ => unreachable!("should be 't' or 'k'"),
+                    },
+                ) {
+                    Ok(()) => {}
+                    Err(Errno::EPERM) => {
+                        self.error_state = Some("missing permissions to send signal".to_string());
+                    }
+                    Err(e) => Err(e)?,
+                };
             }
             _ => {}
         }
