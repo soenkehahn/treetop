@@ -369,7 +369,7 @@ mod test {
     }
 
     fn set_pattern(app: &mut TreetopApp, pattern: &str) -> R<()> {
-        app.pattern = crate::regex::Regex::new(::regex::Regex::new(pattern)?);
+        app.pattern = crate::regex::Regex::new(pattern)?;
         Ok(())
     }
 

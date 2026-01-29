@@ -25,7 +25,7 @@ fn main() -> R<()> {
     TreetopApp::run(TreetopApp::new(
         ProcessWatcher::new(System::new()),
         args.pattern
-            .map(|pattern| ::regex::Regex::new(&pattern).map(crate::Regex::new))
+            .map(|pattern| Regex::new(&pattern))
             .transpose()?,
     )?)
 }
