@@ -14,6 +14,7 @@ mod utils;
 type R<A> = Result<A, Box<dyn Error>>;
 
 #[derive(Parser, Debug)]
+#[cfg_attr(test, derive(Default))]
 struct Args {
     /// Search pattern for filtering the process tree
     pattern: Option<String>,
