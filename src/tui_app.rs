@@ -50,7 +50,7 @@ pub(crate) fn run_ui<T: TuiApp>(app: T) -> R<()> {
     enable_raw_mode()?;
     std::panic::set_hook(Box::new(|panic_info| {
         let _ = reset_terminal();
-        eprintln!("panic: {}", panic_info);
+        eprintln!("panic: {panic_info}");
     }));
     match main_loop(app, termination_signal_received) {
         Err(err) => {

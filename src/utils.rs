@@ -13,6 +13,6 @@ pub(crate) mod test {
         }
     }
     pub(crate) fn underline(s: &str) -> String {
-        format!("{}\u{35f}", s)
+        format!("{s}\u{35f}")
     }
 }
