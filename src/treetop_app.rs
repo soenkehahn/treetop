@@ -322,7 +322,7 @@ mod test {
     #[test]
     fn normalize_leaves_state_unmodified() {
         let mut list_state = ListState::default().with_selected(Some(7)).with_offset(5);
-        normalize_list_state(&mut list_state, &vec![(); 30], &RECT);
+        normalize_list_state(&mut list_state, &[(); 30], &RECT);
         assert_eq!(list_state.selected(), Some(7));
         assert_eq!(list_state.offset(), 5);
     }
@@ -330,31 +330,22 @@ mod test {
     #[test]
     fn normalize_caps_at_the_list_end() {
         let mut list_state = ListState::default().with_selected(Some(11));
-        normalize_list_state(&mut list_state, &vec![(); 10], &RECT);
+        normalize_list_state(&mut list_state, &[(); 10], &RECT);
         assert_eq!(list_state.selected(), Some(9));
     }
 
     #[test]
     fn normalize_resets_offset_to_zero_when_the_list_fits_the_area() {
         let mut list_state = ListState::default().with_selected(Some(0)).with_offset(5);
-        normalize_list_state(&mut list_state, &vec![(); 10], &RECT);
+        normalize_list_state(&mut list_state, &[(); 10], &RECT);
         assert_eq!(list_state.offset(), 0);
     }
 
     #[test]
     fn normalize_scrolls_up_when_offset_is_too_big() {
         let mut list_state = ListState::default().with_selected(Some(0)).with_offset(25);
-        normalize_list_state(&mut list_state, &vec![(); 30], &RECT);
+        normalize_list_state(&mut list_state, &[(); 30], &RECT);
         assert_eq!(list_state.offset(), 10);
-    }
-
-    impl Default for Args {
-        fn default() -> Self {
-            Args {
-                pattern: None,
-                dont_hide_self: false,
-            }
-        }
     }
 
     fn test_app(processes: Vec<Process>) -> R<TreetopApp> {

@@ -39,7 +39,7 @@
         checks = {
           tests = craneLib.cargoTest commonArgs;
           clippy = craneLib.cargoClippy (commonArgs // {
-            cargoClippyExtraArgs = "-- -Dwarnings";
+            cargoClippyExtraArgs = "--all-targets -- -Dwarnings";
           });
         };
         devShells.default = craneLib.devShell {

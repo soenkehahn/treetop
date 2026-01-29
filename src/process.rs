@@ -195,6 +195,7 @@ impl SortBy {
 pub(crate) struct ProcessWatcher(ProcessWatcherInner);
 
 #[derive(Debug)]
+#[allow(clippy::large_enum_variant)]
 enum ProcessWatcherInner {
     Production {
         system: sysinfo::System,
