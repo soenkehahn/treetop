@@ -52,7 +52,7 @@ pub(crate) fn run_ui<T: TuiApp>(app: T) -> R<()> {
         let _ = reset_terminal();
         eprintln!("panic: {panic_info}");
     }));
-    match main_loop(app, termination_signal_received) {
+    match main_loop(app, &termination_signal_received) {
         Err(err) => {
             let _ = reset_terminal();
             Err(err)
@@ -70,7 +70,7 @@ fn reset_terminal() -> R<()> {
     Ok(())
 }
 
-fn main_loop<T: TuiApp>(mut app: T, termination_signal_received: Arc<AtomicBool>) -> R<()> {
+fn main_loop<T: TuiApp>(mut app: T, termination_signal_received: &Arc<AtomicBool>) -> R<()> {
     let mut terminal = Terminal::new(CrosstermBackend::new(stdout()))?;
     terminal.clear()?;
     let tick_length = Duration::from_millis(1000);

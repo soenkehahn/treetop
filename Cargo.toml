@@ -21,6 +21,5 @@ unindent = "0.2.3"
 [lints.clippy]
 pedantic = { level = "warn", priority = -1 }
 bool_to_int_with_if = "allow"
-needless_pass_by_value = "allow"
 single_match_else = "allow"
 too_many_lines = "allow"
