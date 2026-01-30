@@ -59,7 +59,7 @@ where
         roots: Vec<Node::Id>,
     ) -> Self {
         let mut result = Forest(Vec::new());
-        for root in roots.into_iter() {
+        for root in roots {
             let children = children_map.remove(&root).unwrap_or_default();
             result.0.push(Tree {
                 node: node_map.remove(&root).unwrap(),
@@ -96,15 +96,15 @@ where
         F: Fn(&Node, &Node) -> Ordering,
     {
         self.0.sort_by(|a, b| compare(&a.node, &b.node));
-        for tree in self.0.iter_mut() {
+        for tree in &mut self.0 {
             tree.children.sort_by(compare);
         }
     }
 
     fn compute_accumulate(&mut self) {
-        for tree in self.0.iter_mut() {
+        for tree in &mut self.0 {
             tree.children.compute_accumulate();
-            for child in tree.children.0.iter_mut() {
+            for child in &mut tree.children.0 {
                 tree.node.accumulate_from(&child.node);
             }
         }
@@ -124,11 +124,11 @@ where
         let mut any_child_included = false;
         let mut old = Forest(Vec::new());
         std::mem::swap(self, &mut old);
-        for mut tree in old.0.into_iter() {
+        for mut tree in old.0 {
             if parent_included || filter(&tree.node) {
                 tree.children.filter_helper(filter, true);
                 self.0.push(tree);
-                any_child_included = true
+                any_child_included = true;
             } else if tree.children.filter_helper(filter, false) {
                 self.0.push(tree);
                 any_child_included = true;

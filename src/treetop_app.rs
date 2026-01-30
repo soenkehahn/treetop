@@ -87,6 +87,7 @@ impl TreetopApp {
 impl tui_app::TuiApp for TreetopApp {
     fn update(&mut self, event: KeyEvent) -> R<UpdateResult> {
         self.error_state = None;
+        #[allow(clippy::match_same_arms)]
         match (event.modifiers, self.ui_mode, event.code) {
             (KeyModifiers::CONTROL, _, KeyCode::Char('c'))
             | (KeyModifiers::NONE, UiMode::Normal, KeyCode::Char('q')) => {
@@ -188,7 +189,7 @@ impl tui_app::TuiApp for TreetopApp {
                 - if self.error_state.is_some() { 1 } else { 0 },
         };
         let list = self.forest.render_forest_prefixes();
-        normalize_list_state(&mut self.list_state, &list, &list_rect);
+        normalize_list_state(&mut self.list_state, &list, list_rect);
         let tree_lines = list.iter().enumerate().map(|(i, x)| {
             let mut line = Line::default();
             line.push_span(format!("{} ", x.1.table_data()));
@@ -213,7 +214,7 @@ impl tui_app::TuiApp for TreetopApp {
             &mut self.list_state,
         );
         if let Some(error) = &self.error_state {
-            Paragraph::new(format!("Error: {}", error))
+            Paragraph::new(format!("Error: {error}"))
                 .red()
                 .bold()
                 .reversed()
@@ -292,7 +293,7 @@ impl tui_app::TuiApp for TreetopApp {
     }
 }
 
-fn normalize_list_state<T>(list_state: &mut ListState, list: &[T], rect: &Rect) {
+fn normalize_list_state<T>(list_state: &mut ListState, list: &[T], rect: Rect) {
     if let Some(ref mut selected) = list_state.selected_mut() {
         *selected = (*selected).min(list.len().saturating_sub(1));
     }
@@ -322,7 +323,7 @@ mod test {
     #[test]
     fn normalize_leaves_state_unmodified() {
         let mut list_state = ListState::default().with_selected(Some(7)).with_offset(5);
-        normalize_list_state(&mut list_state, &[(); 30], &RECT);
+        normalize_list_state(&mut list_state, &[(); 30], RECT);
         assert_eq!(list_state.selected(), Some(7));
         assert_eq!(list_state.offset(), 5);
     }
@@ -330,21 +331,21 @@ mod test {
     #[test]
     fn normalize_caps_at_the_list_end() {
         let mut list_state = ListState::default().with_selected(Some(11));
-        normalize_list_state(&mut list_state, &[(); 10], &RECT);
+        normalize_list_state(&mut list_state, &[(); 10], RECT);
         assert_eq!(list_state.selected(), Some(9));
     }
 
     #[test]
     fn normalize_resets_offset_to_zero_when_the_list_fits_the_area() {
         let mut list_state = ListState::default().with_selected(Some(0)).with_offset(5);
-        normalize_list_state(&mut list_state, &[(); 10], &RECT);
+        normalize_list_state(&mut list_state, &[(); 10], RECT);
         assert_eq!(list_state.offset(), 0);
     }
 
     #[test]
     fn normalize_scrolls_up_when_offset_is_too_big() {
         let mut list_state = ListState::default().with_selected(Some(0)).with_offset(25);
-        normalize_list_state(&mut list_state, &[(); 30], &RECT);
+        normalize_list_state(&mut list_state, &[(); 30], RECT);
         assert_eq!(list_state.offset(), 10);
     }
 
@@ -373,7 +374,7 @@ mod test {
                 };
                 result.push_str(&symbol);
             }
-            result.push('\n')
+            result.push('\n');
         }
         result
     }

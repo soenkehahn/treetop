@@ -33,12 +33,12 @@ impl fmt::Display for Process {
         match self.arguments.first() {
             Some(executable) => match Path::new(&executable).file_name() {
                 Some(file_name) => write!(f, "{}", file_name.to_string_lossy())?,
-                None => write!(f, "{}", executable)?,
+                None => write!(f, "{executable}")?,
             },
             None => write!(f, "{}", self.name)?,
         }
         for argument in self.arguments.iter().skip(1) {
-            write!(f, " {}", argument)?;
+            write!(f, " {argument}")?;
         }
         Ok(())
     }
@@ -86,9 +86,8 @@ impl Process {
             SortBy::Ram => other.ram.partial_cmp(&self.ram),
         };
         match ordering {
-            Some(std::cmp::Ordering::Equal) => self.pid.cmp(&other.pid),
+            Some(std::cmp::Ordering::Equal) | None => self.pid.cmp(&other.pid),
             Some(ordering) => ordering,
-            None => self.pid.cmp(&other.pid),
         }
     }
 
@@ -116,7 +115,7 @@ impl Process {
                 };
                 line.push_span(" ".repeat(leading_spaces));
                 line.push_span(Span::styled(
-                    format!("{:?}", column).to_lowercase(),
+                    format!("{column:?}").to_lowercase(),
                     if column == sort_by {
                         Style::new().add_modifier(Modifier::REVERSED)
                     } else {
@@ -246,6 +245,7 @@ impl ProcessWatcher {
 pub(crate) mod test {
     use super::*;
     use crate::R;
+    use std::string::ToString;
 
     impl Process {
         pub(crate) fn fake(pid: usize, cpu: f32, parent: Option<usize>) -> Process {
@@ -260,7 +260,7 @@ pub(crate) mod test {
         }
 
         pub(crate) fn set_arguments(mut self, arguments: Vec<&str>) -> Self {
-            self.arguments = arguments.into_iter().map(|x| x.to_string()).collect();
+            self.arguments = arguments.into_iter().map(ToString::to_string).collect();
             self
         }
     }
