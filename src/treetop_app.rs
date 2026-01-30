@@ -169,7 +169,7 @@ impl tui_app::TuiApp for TreetopApp {
                         self.error_state = Some("missing permissions to send signal".to_string());
                     }
                     Err(e) => Err(e)?,
-                };
+                }
             }
             _ => {}
         }
