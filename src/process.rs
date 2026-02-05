@@ -26,6 +26,7 @@ pub(crate) struct Process {
     parent: Option<Pid>,
     cpu: f32,
     ram: u64,
+    pub(crate) matched: bool,
 }
 
 impl fmt::Display for Process {
@@ -76,6 +77,7 @@ impl Process {
             parent: process.parent(),
             cpu: process.cpu_usage(),
             ram: process.memory(),
+            matched: false,
         }
     }
 
@@ -256,6 +258,7 @@ pub(crate) mod test {
                 parent: parent.map(From::from),
                 cpu,
                 ram: 0,
+                matched: false,
             }
         }
 
@@ -274,6 +277,7 @@ pub(crate) mod test {
                 parent: None,
                 cpu: 0.0,
                 ram: 0,
+                matched: false,
             }
         }
     }
