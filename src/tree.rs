@@ -118,20 +118,20 @@ where
 
     pub(crate) fn filter<F>(&mut self, filter: F)
     where
-        F: Fn(&Node) -> bool,
+        F: Fn(&mut Node) -> bool,
     {
         self.filter_helper(&filter, false);
     }
 
     fn filter_helper<F>(&mut self, filter: &F, parent_included: bool) -> bool
     where
-        F: Fn(&Node) -> bool,
+        F: Fn(&mut Node) -> bool,
     {
         let mut any_child_included = false;
         let mut old = Forest(Vec::new());
         std::mem::swap(self, &mut old);
         for mut tree in old.0 {
-            if parent_included || filter(&tree.node) {
+            if parent_included || filter(&mut tree.node) {
                 tree.children.filter_helper(filter, true);
                 self.0.push(tree);
                 any_child_included = true;

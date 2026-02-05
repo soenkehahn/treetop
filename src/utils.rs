@@ -13,6 +13,11 @@ pub(crate) mod test {
         }
     }
     pub(crate) fn underline(s: &str) -> String {
-        format!("{s}\u{35f}")
+        let mut result = String::new();
+        for char in s.chars() {
+            result.push(char);
+            result.push('\u{35f}');
+        }
+        return result;
     }
 }

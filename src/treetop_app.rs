@@ -14,6 +14,7 @@ use crate::{
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use nix::errno::Errno;
 use nix::sys::signal::kill;
+use ratatui::text::Span;
 use ratatui::{
     buffer::Buffer,
     layout::Rect,
@@ -70,11 +71,16 @@ impl TreetopApp {
         self.forest
             .sort_by(&|a, b| Process::compare(a, b, self.sort_column));
         self.forest.filter(|p| {
-            p.is_match(
+            if let SearchPattern::Empty = self.pattern {
+                return true;
+            }
+            let is_match = p.is_match(
                 &self.pattern,
                 sysinfo::Pid::from_u32(process::id()),
                 &self.args,
-            )
+            );
+            p.matched = is_match;
+            is_match
         });
         if let UiMode::ProcessSelected(selected) = self.ui_mode {
             if !self.forest.iter().any(|node| node.id() == selected) {
@@ -190,23 +196,24 @@ impl tui_app::TuiApp for TreetopApp {
         };
         let list = self.forest.render_forest_prefixes();
         normalize_list_state(&mut self.list_state, &list, list_rect);
-        let tree_lines = list.iter().enumerate().map(|(i, with_prefix)| {
+        let tree_lines = list.iter().enumerate().map(|(index, with_prefix)| {
             let mut line = Line::default();
             line.push_span(format!("{} ", with_prefix.node.table_data()));
             line.push_span("┃".dark_gray());
-            line.push_span(if self.list_state.selected() == Some(i) {
+            line.push_span(if self.list_state.selected() == Some(index) {
                 " ▶ "
             } else {
                 "   "
             });
             line.push_span(with_prefix.prefix.as_str().blue());
-            line.push_span(
-                if self.ui_mode == UiMode::ProcessSelected(with_prefix.node.id()) {
-                    with_prefix.node.to_string().reversed().blue()
-                } else {
-                    with_prefix.node.to_string().not_reversed()
-                },
-            );
+            let mut process_string = Span::raw(with_prefix.node.to_string());
+            if self.ui_mode == UiMode::ProcessSelected(with_prefix.node.id()) {
+                process_string = process_string.reversed().blue();
+            }
+            if with_prefix.node.matched {
+                process_string = process_string.underlined();
+            }
+            line.push_span(process_string);
             line
         });
         StatefulWidget::render(
@@ -369,7 +376,9 @@ mod test {
         for y in 0..area.height {
             for x in 0..area.width {
                 let symbol = buffer[(x, y)].symbol();
-                let symbol = if buffer[(x, y)].modifier.contains(Modifier::REVERSED) {
+                let symbol = if buffer[(x, y)].modifier.contains(Modifier::REVERSED)
+                    || buffer[(x, y)].modifier.contains(Modifier::UNDERLINED)
+                {
                     crate::utils::test::underline(symbol)
                 } else {
                     symbol.to_string()
@@ -449,6 +458,8 @@ mod test {
     }
 
     #[test]
+    // TODO: only highlight the matched substring
+    // TODO: only highlight the matched args
     fn filtering() -> R<()> {
         let mut app = test_app(vec![
             Process::fake(1, 1.0, None),
@@ -480,6 +491,7 @@ mod test {
     }
 
     #[test]
+    // TODO: highlight pids
     fn filtering_by_pid() -> R<()> {
         let mut app = test_app(vec![
             Process::fake(1, 0.0, None),
@@ -533,7 +545,7 @@ mod test {
         )?;
         set_pattern(&mut app, "bar")?;
         app.tick();
-        assert!(render_ui(&mut app).contains("bar"));
+        assert!(render_ui(&mut app).contains(&crate::utils::test::underline("bar")));
         Ok(())
     }
 
