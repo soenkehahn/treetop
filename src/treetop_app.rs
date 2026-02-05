@@ -124,7 +124,7 @@ impl tui_app::TuiApp for TreetopApp {
                         .into_iter()
                         .nth(selected)
                     {
-                        self.ui_mode = UiMode::ProcessSelected(process.1.id());
+                        self.ui_mode = UiMode::ProcessSelected(process.node.id());
                     }
                 }
             }
@@ -190,21 +190,23 @@ impl tui_app::TuiApp for TreetopApp {
         };
         let list = self.forest.render_forest_prefixes();
         normalize_list_state(&mut self.list_state, &list, list_rect);
-        let tree_lines = list.iter().enumerate().map(|(i, x)| {
+        let tree_lines = list.iter().enumerate().map(|(i, with_prefix)| {
             let mut line = Line::default();
-            line.push_span(format!("{} ", x.1.table_data()));
+            line.push_span(format!("{} ", with_prefix.node.table_data()));
             line.push_span("┃".dark_gray());
             line.push_span(if self.list_state.selected() == Some(i) {
                 " ▶ "
             } else {
                 "   "
             });
-            line.push_span(x.0.as_str().blue());
-            line.push_span(if self.ui_mode == UiMode::ProcessSelected(x.1.id()) {
-                x.1.to_string().reversed().blue()
-            } else {
-                x.1.to_string().not_reversed()
-            });
+            line.push_span(with_prefix.prefix.as_str().blue());
+            line.push_span(
+                if self.ui_mode == UiMode::ProcessSelected(with_prefix.node.id()) {
+                    with_prefix.node.to_string().reversed().blue()
+                } else {
+                    with_prefix.node.to_string().not_reversed()
+                },
+            );
             line
         });
         StatefulWidget::render(

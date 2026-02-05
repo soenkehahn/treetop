@@ -24,6 +24,12 @@ pub(crate) struct Tree<Node> {
 #[derive(Debug)]
 pub(crate) struct Forest<Node>(Vec<Tree<Node>>);
 
+#[derive(Debug)]
+pub(crate) struct WithPrefix<Node> {
+    pub(crate) prefix: String,
+    pub(crate) node: Node,
+}
+
 impl<Node> Forest<Node>
 where
     Node: crate::tree::Node + Display,
@@ -137,7 +143,7 @@ where
         any_child_included
     }
 
-    pub(crate) fn render_forest_prefixes(&self) -> Vec<(String, &Node)> {
+    pub(crate) fn render_forest_prefixes(&self) -> Vec<WithPrefix<&Node>> {
         let mut acc = Vec::new();
         self.render_forest_prefixes_helper(true, &mut Vec::new(), &mut acc);
         acc
@@ -147,7 +153,7 @@ where
         &'a self,
         is_root: bool,
         prefixes: &mut Vec<&str>,
-        acc: &mut Vec<(String, &'a Node)>,
+        acc: &mut Vec<WithPrefix<&'a Node>>,
     ) {
         for (i, child) in self.0.iter().enumerate() {
             let is_last = i == self.0.len() - 1;
@@ -160,7 +166,10 @@ where
                 let has_children = !child.children.0.is_empty();
                 line += if has_children { "┬ " } else { "─ " };
             }
-            acc.push((line, &child.node));
+            acc.push(WithPrefix {
+                prefix: line,
+                node: &child.node,
+            });
             if !(is_root) {
                 prefixes.push(if is_last { "  " } else { "│ " });
             }
@@ -188,7 +197,7 @@ mod test {
             let table: Vec<String> = self
                 .render_forest_prefixes()
                 .into_iter()
-                .map(|x| format!("{}{}", x.0, x.1))
+                .map(|x| format!("{}{}", x.prefix, x.node))
                 .collect();
             format!("{}\n", table.join("\n"))
         }
