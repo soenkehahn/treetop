@@ -1,4 +1,4 @@
-use crate::regex::Regex;
+use crate::search_pattern::SearchPattern;
 pub(crate) use crate::tree::Forest;
 use crate::tree::Node;
 use crate::Args;
@@ -91,7 +91,7 @@ impl Process {
         }
     }
 
-    pub(crate) fn is_match(&self, pattern: &Regex, treetop_pid: Pid, args: &Args) -> bool {
+    pub(crate) fn is_match(&self, pattern: &SearchPattern, treetop_pid: Pid, args: &Args) -> bool {
         if pattern.is_match(&self.name) {
             return true;
         }
@@ -290,18 +290,22 @@ pub(crate) mod test {
         #[test]
         fn is_match_considers_arguments() -> R<()> {
             assert!(Process::default().set_arguments(vec!["foo"]).is_match(
-                &Regex::new("foo")?,
+                &SearchPattern::from_string("foo"),
                 0.into(),
                 &Args::default()
             ));
             assert!(!Process::default().set_arguments(vec!["foo"]).is_match(
-                &Regex::new("bar")?,
+                &SearchPattern::from_string("bar"),
                 0.into(),
                 &Args::default()
             ));
             assert!(Process::default()
                 .set_arguments(vec!["foobarbaz"])
-                .is_match(&Regex::new("bar")?, 0.into(), &Args::default()));
+                .is_match(
+                    &SearchPattern::from_string("bar"),
+                    0.into(),
+                    &Args::default()
+                ));
             Ok(())
         }
 
@@ -309,10 +313,18 @@ pub(crate) mod test {
         fn filtering_by_matching_on_multiple_process_arguments() -> R<()> {
             assert!(Process::default()
                 .set_arguments(vec!["foo", "bar"])
-                .is_match(&Regex::new("fo.*ar")?, 0.into(), &Args::default()));
+                .is_match(
+                    &SearchPattern::from_string("fo.*ar"),
+                    0.into(),
+                    &Args::default()
+                ));
             assert!(Process::default()
                 .set_arguments(vec!["foo", "bar"])
-                .is_match(&Regex::new("foo bar")?, 0.into(), &Args::default()));
+                .is_match(
+                    &SearchPattern::from_string("foo bar"),
+                    0.into(),
+                    &Args::default()
+                ));
             Ok(())
         }
 
@@ -324,10 +336,26 @@ pub(crate) mod test {
                 arguments: vec!["foo".to_string()],
                 ..Process::default()
             };
-            assert!(!process.is_match(&Regex::new("foo")?, 42.into(), &Args::default()));
-            assert!(process.is_match(&Regex::new("foo")?, 43.into(), &Args::default()));
-            assert!(process.is_match(&Regex::new("treetop")?, 42.into(), &Args::default()));
-            assert!(process.is_match(&Regex::new("42")?, 42.into(), &Args::default()));
+            assert!(!process.is_match(
+                &SearchPattern::from_string("foo"),
+                42.into(),
+                &Args::default()
+            ));
+            assert!(process.is_match(
+                &SearchPattern::from_string("foo"),
+                43.into(),
+                &Args::default()
+            ));
+            assert!(process.is_match(
+                &SearchPattern::from_string("treetop"),
+                42.into(),
+                &Args::default()
+            ));
+            assert!(process.is_match(
+                &SearchPattern::from_string("42"),
+                42.into(),
+                &Args::default()
+            ));
             Ok(())
         }
 
@@ -340,7 +368,7 @@ pub(crate) mod test {
                 ..Process::default()
             };
             assert!(process.is_match(
-                &Regex::new("foo")?,
+                &SearchPattern::from_string("foo"),
                 42.into(),
                 &Args {
                     dont_hide_self: true,

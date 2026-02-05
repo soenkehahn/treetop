@@ -2,7 +2,7 @@ use std::process;
 
 use crate::process::ProcessWatcher;
 use crate::process::SortBy;
-use crate::regex::Regex;
+use crate::search_pattern::SearchPattern;
 use crate::tree::Forest;
 use crate::Args;
 use crate::{
@@ -27,7 +27,7 @@ pub(crate) struct TreetopApp {
     args: Args,
     process_watcher: ProcessWatcher,
     forest: Forest<Process>,
-    pattern: Regex,
+    pattern: SearchPattern,
     list_state: ListState,
     ui_mode: UiMode,
     sort_column: SortBy,
@@ -42,14 +42,14 @@ enum UiMode {
 }
 
 impl TreetopApp {
-    pub(crate) fn new(process_watcher: ProcessWatcher, args: Args) -> R<TreetopApp> {
+    pub(crate) fn new(process_watcher: ProcessWatcher, args: Args) -> TreetopApp {
         let pattern = args
             .pattern
             .as_ref()
-            .map(|pattern| Regex::new(pattern))
-            .transpose()?
-            .unwrap_or(Regex::empty()?);
-        Ok(TreetopApp {
+            .map_or(SearchPattern::empty(), |pattern| {
+                SearchPattern::from_string(pattern)
+            });
+        TreetopApp {
             args,
             process_watcher,
             forest: Forest::empty(),
@@ -58,7 +58,7 @@ impl TreetopApp {
             ui_mode: UiMode::Normal,
             sort_column: SortBy::default(),
             error_state: None,
-        })
+        }
     }
 
     pub(crate) fn run(self) -> R<()> {
@@ -356,7 +356,7 @@ mod test {
     }
 
     fn test_app_with_args(processes: Vec<Process>, args: Args) -> R<TreetopApp> {
-        let mut app = TreetopApp::new(ProcessWatcher::fake(processes), args)?;
+        let mut app = TreetopApp::new(ProcessWatcher::fake(processes), args);
         app.tick();
         Ok(app)
     }
@@ -391,7 +391,7 @@ mod test {
     }
 
     fn set_pattern(app: &mut TreetopApp, pattern: &str) -> R<()> {
-        app.pattern = crate::regex::Regex::new(pattern)?;
+        app.pattern = crate::search_pattern::SearchPattern::from_string(pattern);
         Ok(())
     }
 

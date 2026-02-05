@@ -5,7 +5,7 @@ use std::error::Error;
 use sysinfo::System;
 
 mod process;
-mod regex;
+mod search_pattern;
 mod tree;
 mod treetop_app;
 mod tui_app;
@@ -31,5 +31,5 @@ struct Args {
 
 fn main() -> R<()> {
     let args = Args::parse();
-    TreetopApp::run(TreetopApp::new(ProcessWatcher::new(System::new()), args)?)
+    TreetopApp::run(TreetopApp::new(ProcessWatcher::new(System::new()), args))
 }
