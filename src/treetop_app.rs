@@ -1,5 +1,7 @@
+use std::ops::Range;
 use std::process;
 
+use crate::process::Match;
 use crate::process::ProcessWatcher;
 use crate::process::SortBy;
 use crate::search_pattern::SearchPattern;
@@ -14,6 +16,7 @@ use crate::{
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use nix::errno::Errno;
 use nix::sys::signal::kill;
+use ratatui::style::Color;
 use ratatui::text::Span;
 use ratatui::{
     buffer::Buffer,
@@ -74,13 +77,12 @@ impl TreetopApp {
             if let SearchPattern::Empty = self.pattern {
                 return true;
             }
-            let is_match = p.is_match(
+            p.matched = p.get_match(
                 &self.pattern,
                 sysinfo::Pid::from_u32(process::id()),
                 &self.args,
             );
-            p.matched = is_match;
-            is_match
+            p.matched.is_match()
         });
         if let UiMode::ProcessSelected(selected) = self.ui_mode {
             if !self.forest.iter().any(|node| node.id() == selected) {
@@ -210,10 +212,17 @@ impl tui_app::TuiApp for TreetopApp {
             if self.ui_mode == UiMode::ProcessSelected(with_prefix.node.id()) {
                 process_string = process_string.reversed().blue();
             }
-            if with_prefix.node.matched {
-                process_string = process_string.underlined();
+            match &with_prefix.node.matched {
+                Match::InCommand(range) => {
+                    let (pre, target, post) = split_span(&process_string, range);
+                    line.push_span(pre.clone());
+                    line.push_span(target.fg(Color::Red).bold().clone());
+                    line.push_span(post.clone());
+                }
+                _ => {
+                    line.push_span(process_string);
+                }
             }
-            line.push_span(process_string);
             line
         });
         StatefulWidget::render(
@@ -302,6 +311,14 @@ impl tui_app::TuiApp for TreetopApp {
     }
 }
 
+fn split_span(s: &Span, r: &Range<usize>) -> (Span<'static>, Span<'static>, Span<'static>) {
+    (
+        Span::styled(s.content[..r.start].to_string(), s.style),
+        Span::styled(s.content[r.start..r.end].to_string(), s.style),
+        Span::styled(s.content[r.end..].to_string(), s.style),
+    )
+}
+
 fn normalize_list_state<T>(list_state: &mut ListState, list: &[T], rect: Rect) {
     if let Some(ref mut selected) = list_state.selected_mut() {
         *selected = (*selected).min(list.len().saturating_sub(1));
@@ -377,7 +394,7 @@ mod test {
             for x in 0..area.width {
                 let symbol = buffer[(x, y)].symbol();
                 let symbol = if buffer[(x, y)].modifier.contains(Modifier::REVERSED)
-                    || buffer[(x, y)].modifier.contains(Modifier::UNDERLINED)
+                    || buffer[(x, y)].modifier.contains(Modifier::BOLD)
                 {
                     crate::utils::test::underline(symbol)
                 } else {
@@ -460,6 +477,7 @@ mod test {
     #[test]
     // TODO: only highlight the matched substring
     // TODO: only highlight the matched args
+    // TODO: test highlight works if both parent and child match (both should be highlighted?)
     fn filtering() -> R<()> {
         let mut app = test_app(vec![
             Process::fake(1, 1.0, None),
@@ -471,6 +489,15 @@ mod test {
             Process::fake(7, 5.0, Some(6)),
         ])?;
         set_pattern(&mut app, "four")?;
+        app.tick();
+        assert_snapshot!(render_ui(&mut app));
+        Ok(())
+    }
+
+    #[test]
+    fn filtering_highlights_substring_in_process_name() -> R<()> {
+        let mut app = test_app(vec![Process::fake(7, 1.0, None)])?;
+        set_pattern(&mut app, "eve")?;
         app.tick();
         assert_snapshot!(render_ui(&mut app));
         Ok(())
@@ -545,7 +572,7 @@ mod test {
         )?;
         set_pattern(&mut app, "bar")?;
         app.tick();
-        assert!(render_ui(&mut app).contains(&crate::utils::test::underline("bar")));
+        assert!(render_ui(&mut app).contains("bar"));
         Ok(())
     }
 

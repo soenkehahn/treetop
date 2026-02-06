@@ -1,4 +1,5 @@
 use regex::Regex;
+use std::ops::Range;
 
 #[derive(Debug)]
 pub(crate) enum SearchPattern {
@@ -9,7 +10,7 @@ pub(crate) enum SearchPattern {
 
 impl SearchPattern {
     pub(crate) fn empty() -> SearchPattern {
-        SearchPattern::from_string("")
+        SearchPattern::Empty
     }
 
     pub(crate) fn from_string(regex: &str) -> SearchPattern {
@@ -29,6 +30,14 @@ impl SearchPattern {
             SearchPattern::Empty => true,
             SearchPattern::Regex { regex } => regex.is_match(s),
             SearchPattern::Invalid { .. } => false,
+        }
+    }
+
+    pub(crate) fn find(&self, s: &str) -> Option<Range<usize>> {
+        match self {
+            SearchPattern::Empty => todo!(),
+            SearchPattern::Regex { regex } => regex.find(s).map(|m| m.range()),
+            SearchPattern::Invalid { .. } => None,
         }
     }
 

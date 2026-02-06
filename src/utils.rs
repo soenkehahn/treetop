@@ -12,6 +12,7 @@ pub(crate) mod test {
             _ => "some-process",
         }
     }
+
     pub(crate) fn underline(s: &str) -> String {
         let mut result = String::new();
         for char in s.chars() {

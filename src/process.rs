@@ -12,6 +12,7 @@ use ratatui::style::Style;
 use ratatui::text::Line;
 use ratatui::text::Span;
 use std::fmt;
+use std::ops::Range;
 use std::path::Path;
 use sysinfo::Pid;
 use sysinfo::ProcessRefreshKind;
@@ -26,7 +27,7 @@ pub(crate) struct Process {
     parent: Option<Pid>,
     cpu: f32,
     ram: u64,
-    pub(crate) matched: bool,
+    pub(crate) matched: Match,
 }
 
 impl fmt::Display for Process {
@@ -62,6 +63,22 @@ impl Node for Process {
     }
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum Match {
+    None,
+    Other,
+    InCommand(Range<usize>),
+}
+
+impl Match {
+    pub(crate) fn is_match(&self) -> bool {
+        match self {
+            Self::None => false,
+            Self::Other | Self::InCommand(_) => true,
+        }
+    }
+}
+
 impl Process {
     fn from_sysinfo_process(process: &sysinfo::Process) -> Self {
         Process {
@@ -77,7 +94,7 @@ impl Process {
             parent: process.parent(),
             cpu: process.cpu_usage(),
             ram: process.memory(),
-            matched: false,
+            matched: Match::None,
         }
     }
 
@@ -93,17 +110,24 @@ impl Process {
         }
     }
 
-    pub(crate) fn is_match(&self, pattern: &SearchPattern, treetop_pid: Pid, args: &Args) -> bool {
-        if pattern.is_match(&self.name) {
-            return true;
+    pub(crate) fn get_match(
+        &self,
+        pattern: &SearchPattern,
+        treetop_pid: Pid,
+        args: &Args,
+    ) -> Match {
+        if let Some(range) = pattern.find(&self.name) {
+            return Match::InCommand(range);
         }
         if pattern.is_match(&self.id().to_string()) {
-            return true;
+            return Match::Other;
         }
-        if pattern.is_match(&self.arguments.join(" ")) {
-            return args.dont_hide_self || treetop_pid != self.id();
+        if pattern.is_match(&self.arguments.join(" "))
+            && (args.dont_hide_self || treetop_pid != self.id())
+        {
+            return Match::Other;
         }
-        false
+        Match::None
     }
 
     pub(crate) fn render_header(area: Rect, sort_by: SortBy, buffer: &mut Buffer) -> u16 {
@@ -258,7 +282,7 @@ pub(crate) mod test {
                 parent: parent.map(From::from),
                 cpu,
                 ram: 0,
-                matched: false,
+                matched: Match::None,
             }
         }
 
@@ -277,7 +301,7 @@ pub(crate) mod test {
                 parent: None,
                 cpu: 0.0,
                 ram: 0,
-                matched: false,
+                matched: Match::None,
             }
         }
     }
@@ -293,23 +317,30 @@ pub(crate) mod test {
 
         #[test]
         fn is_match_considers_arguments() -> R<()> {
-            assert!(Process::default().set_arguments(vec!["foo"]).is_match(
-                &SearchPattern::from_string("foo"),
-                0.into(),
-                &Args::default()
-            ));
-            assert!(!Process::default().set_arguments(vec!["foo"]).is_match(
-                &SearchPattern::from_string("bar"),
-                0.into(),
-                &Args::default()
-            ));
             assert!(Process::default()
-                .set_arguments(vec!["foobarbaz"])
-                .is_match(
+                .set_arguments(vec!["foo"])
+                .get_match(
+                    &SearchPattern::from_string("foo"),
+                    0.into(),
+                    &Args::default()
+                )
+                .is_match());
+            assert!(!Process::default()
+                .set_arguments(vec!["foo"])
+                .get_match(
                     &SearchPattern::from_string("bar"),
                     0.into(),
                     &Args::default()
-                ));
+                )
+                .is_match());
+            assert!(Process::default()
+                .set_arguments(vec!["foobarbaz"])
+                .get_match(
+                    &SearchPattern::from_string("bar"),
+                    0.into(),
+                    &Args::default()
+                )
+                .is_match());
             Ok(())
         }
 
@@ -317,18 +348,20 @@ pub(crate) mod test {
         fn filtering_by_matching_on_multiple_process_arguments() -> R<()> {
             assert!(Process::default()
                 .set_arguments(vec!["foo", "bar"])
-                .is_match(
+                .get_match(
                     &SearchPattern::from_string("fo.*ar"),
                     0.into(),
                     &Args::default()
-                ));
+                )
+                .is_match());
             assert!(Process::default()
                 .set_arguments(vec!["foo", "bar"])
-                .is_match(
+                .get_match(
                     &SearchPattern::from_string("foo bar"),
                     0.into(),
                     &Args::default()
-                ));
+                )
+                .is_match());
             Ok(())
         }
 
@@ -340,26 +373,34 @@ pub(crate) mod test {
                 arguments: vec!["foo".to_string()],
                 ..Process::default()
             };
-            assert!(!process.is_match(
-                &SearchPattern::from_string("foo"),
-                42.into(),
-                &Args::default()
-            ));
-            assert!(process.is_match(
-                &SearchPattern::from_string("foo"),
-                43.into(),
-                &Args::default()
-            ));
-            assert!(process.is_match(
-                &SearchPattern::from_string("treetop"),
-                42.into(),
-                &Args::default()
-            ));
-            assert!(process.is_match(
-                &SearchPattern::from_string("42"),
-                42.into(),
-                &Args::default()
-            ));
+            assert!(!process
+                .get_match(
+                    &SearchPattern::from_string("foo"),
+                    42.into(),
+                    &Args::default()
+                )
+                .is_match());
+            assert!(process
+                .get_match(
+                    &SearchPattern::from_string("foo"),
+                    43.into(),
+                    &Args::default()
+                )
+                .is_match());
+            assert!(process
+                .get_match(
+                    &SearchPattern::from_string("treetop"),
+                    42.into(),
+                    &Args::default()
+                )
+                .is_match());
+            assert!(process
+                .get_match(
+                    &SearchPattern::from_string("42"),
+                    42.into(),
+                    &Args::default()
+                )
+                .is_match());
             Ok(())
         }
 
@@ -371,14 +412,16 @@ pub(crate) mod test {
                 arguments: vec!["foo".to_string()],
                 ..Process::default()
             };
-            assert!(process.is_match(
-                &SearchPattern::from_string("foo"),
-                42.into(),
-                &Args {
-                    dont_hide_self: true,
-                    ..Args::default()
-                }
-            ));
+            assert!(process
+                .get_match(
+                    &SearchPattern::from_string("foo"),
+                    42.into(),
+                    &Args {
+                        dont_hide_self: true,
+                        ..Args::default()
+                    }
+                )
+                .is_match());
             Ok(())
         }
     }
