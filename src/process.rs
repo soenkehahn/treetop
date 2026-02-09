@@ -1,12 +1,14 @@
 use crate::search_pattern::SearchPattern;
 pub(crate) use crate::tree::Forest;
 use crate::tree::Node;
+use crate::treetop_app::split_span;
 use crate::Args;
 use num_format::Locale;
 use num_format::ToFormattedString;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::prelude::Stylize;
+use ratatui::style::Color;
 use ratatui::style::Modifier;
 use ratatui::style::Style;
 use ratatui::text::Line;
@@ -60,7 +62,7 @@ impl Node for Process {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum Match {
     None,
-    Other,
+    InPid(Range<usize>),
     InCommand(Range<usize>),
 }
 
@@ -68,7 +70,7 @@ impl Match {
     pub(crate) fn is_match(&self) -> bool {
         match self {
             Self::None => false,
-            Self::Other | Self::InCommand(_) => true,
+            Self::InPid(_) | Self::InCommand(_) => true,
         }
     }
 }
@@ -120,8 +122,8 @@ impl Process {
         if let Some(range) = pattern.find(&self.name) {
             return Match::InCommand(range);
         }
-        if pattern.is_match(&self.id().to_string()) {
-            return Match::Other;
+        if let Some(range) = pattern.find(&self.id().to_string()) {
+            return Match::InPid(range);
         }
         if let Some(mut range) = pattern.find(&self.arguments.join(" ")) {
             if args.dont_hide_self || treetop_pid != self.id() {
@@ -181,13 +183,25 @@ impl Process {
         2
     }
 
-    pub(crate) fn table_data(&self) -> String {
-        format!(
-            "{:>8} {:>4.0}% {:>7}MB",
-            self.pid.as_u32(),
-            self.cpu,
+    pub(crate) fn table_data(&self) -> Line<'static> {
+        let mut result = Line::default();
+        let pid = self.pid.as_u32().to_string();
+        result.push_span(" ".repeat(8 - pid.len()));
+        match &self.matched {
+            Match::InPid(range) => {
+                let (a, b, c) = split_span(&Span::from(pid), range);
+                result.push_span(a);
+                result.push_span(b.fg(Color::Red).bold());
+                result.push_span(c);
+            }
+            _ => result.push_span(Span::from(pid)),
+        }
+        result.push_span(format!(" {:>4.0}%", self.cpu,));
+        result.push_span(format!(
+            " {:>7}MB",
             (self.ram / 2_u64.pow(20)).to_formatted_string(&Locale::en)
-        )
+        ));
+        result
     }
 }
 

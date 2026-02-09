@@ -22,7 +22,6 @@ use ratatui::{
     buffer::Buffer,
     layout::Rect,
     style::Stylize,
-    text::Line,
     widgets::{List, ListState, Paragraph, StatefulWidget, Widget},
 };
 
@@ -75,6 +74,7 @@ impl TreetopApp {
             .sort_by(&|a, b| Process::compare(a, b, self.sort_column));
         self.forest.filter(|p| {
             if let SearchPattern::Empty = self.pattern {
+                p.matched = Match::None;
                 return true;
             }
             p.matched = p.get_match(
@@ -199,9 +199,8 @@ impl tui_app::TuiApp for TreetopApp {
         let list = self.forest.render_forest_prefixes();
         normalize_list_state(&mut self.list_state, &list, list_rect);
         let tree_lines = list.iter().enumerate().map(|(index, with_prefix)| {
-            let mut line = Line::default();
-            line.push_span(format!("{} ", with_prefix.node.table_data()));
-            line.push_span("┃".dark_gray());
+            let mut line = with_prefix.node.table_data();
+            line.push_span(" ┃".dark_gray());
             line.push_span(if self.list_state.selected() == Some(index) {
                 " ▶ "
             } else {
@@ -311,7 +310,10 @@ impl tui_app::TuiApp for TreetopApp {
     }
 }
 
-fn split_span(s: &Span, r: &Range<usize>) -> (Span<'static>, Span<'static>, Span<'static>) {
+pub(crate) fn split_span(
+    s: &Span,
+    r: &Range<usize>,
+) -> (Span<'static>, Span<'static>, Span<'static>) {
     (
         Span::styled(s.content[..r.start].to_string(), s.style),
         Span::styled(s.content[r.start..r.end].to_string(), s.style),
@@ -527,7 +529,6 @@ mod test {
     }
 
     #[test]
-    // TODO: highlight pids
     fn filtering_by_pid() -> R<()> {
         let mut app = test_app(vec![
             Process::fake(1, 0.0, None),
@@ -535,6 +536,15 @@ mod test {
             Process::fake(3, 0.0, None),
         ])?;
         set_pattern(&mut app, "2")?;
+        app.tick();
+        assert_snapshot!(render_ui(&mut app));
+        Ok(())
+    }
+
+    #[test]
+    fn filtering_by_pid_highlights_substrings() -> R<()> {
+        let mut app = test_app(vec![Process::fake(1234, 0.0, None)])?;
+        set_pattern(&mut app, "23")?;
         app.tick();
         assert_snapshot!(render_ui(&mut app));
         Ok(())

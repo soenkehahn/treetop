@@ -25,17 +25,9 @@ impl SearchPattern {
         }
     }
 
-    pub(crate) fn is_match(&self, s: &str) -> bool {
-        match self {
-            SearchPattern::Empty => true,
-            SearchPattern::Regex { regex } => regex.is_match(s),
-            SearchPattern::Invalid { .. } => false,
-        }
-    }
-
     pub(crate) fn find(&self, s: &str) -> Option<Range<usize>> {
         match self {
-            SearchPattern::Empty => todo!(),
+            SearchPattern::Empty => None,
             SearchPattern::Regex { regex } => regex.find(s).map(|m| m.range()),
             SearchPattern::Invalid { .. } => None,
         }
@@ -52,9 +44,13 @@ impl SearchPattern {
     pub(crate) fn modify(&mut self, f: impl FnOnce(&mut String)) {
         let mut regex: String = self.as_str().to_string();
         f(&mut regex);
-        *self = match regex::Regex::new(&regex) {
-            Ok(regex) => SearchPattern::Regex { regex },
-            Err(_) => SearchPattern::Invalid { regex },
+        *self = if regex.is_empty() {
+            SearchPattern::Empty
+        } else {
+            match regex::Regex::new(&regex) {
+                Ok(regex) => SearchPattern::Regex { regex },
+                Err(_) => SearchPattern::Invalid { regex },
+            }
         }
     }
 }
