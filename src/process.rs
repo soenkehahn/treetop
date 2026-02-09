@@ -32,14 +32,8 @@ pub(crate) struct Process {
 
 impl fmt::Display for Process {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self.arguments.first() {
-            Some(executable) => match Path::new(&executable).file_name() {
-                Some(file_name) => write!(f, "{}", file_name.to_string_lossy())?,
-                None => write!(f, "{executable}")?,
-            },
-            None => write!(f, "{}", self.name)?,
-        }
-        for argument in self.arguments.iter().skip(1) {
+        write!(f, "{}", self.name)?;
+        for argument in &self.arguments {
             write!(f, " {argument}")?;
         }
         Ok(())
@@ -81,16 +75,23 @@ impl Match {
 
 impl Process {
     fn from_sysinfo_process(process: &sysinfo::Process) -> Self {
+        let mut vec = process.cmd().to_vec().into_iter();
         Process {
             pid: process.pid(),
-            name: match process.exe() {
-                Some(exe) => match exe.file_name() {
+            name: match vec.next() {
+                Some(executable) => match Path::new(&executable).file_name() {
                     Some(file_name) => file_name.to_string_lossy().to_string(),
-                    None => exe.to_string_lossy().to_string(),
+                    None => executable,
                 },
-                None => process.name().to_string(),
+                None => match process.exe() {
+                    Some(exe) => match exe.file_name() {
+                        Some(file_name) => file_name.to_string_lossy().to_string(),
+                        None => exe.to_string_lossy().to_string(),
+                    },
+                    None => process.name().to_string(),
+                },
             },
-            arguments: process.cmd().to_vec(),
+            arguments: vec.collect(),
             parent: process.parent(),
             cpu: process.cpu_usage(),
             ram: process.memory(),
