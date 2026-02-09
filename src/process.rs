@@ -123,10 +123,12 @@ impl Process {
         if pattern.is_match(&self.id().to_string()) {
             return Match::Other;
         }
-        if pattern.is_match(&self.arguments.join(" "))
-            && (args.dont_hide_self || treetop_pid != self.id())
-        {
-            return Match::Other;
+        if let Some(mut range) = pattern.find(&self.arguments.join(" ")) {
+            if args.dont_hide_self || treetop_pid != self.id() {
+                range.start += self.name.len() + 1;
+                range.end += self.name.len() + 1;
+                return Match::InCommand(range);
+            }
         }
         Match::None
     }

@@ -475,8 +475,6 @@ mod test {
     }
 
     #[test]
-    // TODO: only highlight the matched substring
-    // TODO: only highlight the matched args
     // TODO: test highlight works if both parent and child match (both should be highlighted?)
     fn filtering() -> R<()> {
         let mut app = test_app(vec![
@@ -498,6 +496,17 @@ mod test {
     fn filtering_highlights_substring_in_process_name() -> R<()> {
         let mut app = test_app(vec![Process::fake(7, 1.0, None)])?;
         set_pattern(&mut app, "eve")?;
+        app.tick();
+        assert_snapshot!(render_ui(&mut app));
+        Ok(())
+    }
+
+    #[test]
+    fn filtering_highlights_substring_in_arguments() -> R<()> {
+        let mut app = test_app(vec![
+            Process::fake(1, 1.0, None).set_arguments(vec!["foobar"])
+        ])?;
+        set_pattern(&mut app, "ob")?;
         app.tick();
         assert_snapshot!(render_ui(&mut app));
         Ok(())
@@ -572,7 +581,7 @@ mod test {
         )?;
         set_pattern(&mut app, "bar")?;
         app.tick();
-        assert!(render_ui(&mut app).contains("bar"));
+        assert!(render_ui(&mut app).contains(&crate::utils::test::underline("bar")));
         Ok(())
     }
 
