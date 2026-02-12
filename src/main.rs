@@ -1,6 +1,6 @@
 use crate::process::ProcessWatcher;
 use crate::treetop_app::TreetopApp;
-use clap::{ArgAction, Parser};
+use clap::{CommandFactory, Parser};
 use std::error::Error;
 use sysinfo::System;
 
@@ -17,7 +17,7 @@ type R<A> = Result<A, Box<dyn Error>>;
 #[cfg_attr(test, derive(Default))]
 #[command(disable_help_flag = true)]
 struct Args {
-    #[arg(short = 'h', long = "help", action = ArgAction::HelpLong)]
+    #[arg(short = 'h', long = "help")]
     /// Print this help
     help: bool,
 
@@ -36,5 +36,10 @@ struct Args {
 
 fn main() -> R<()> {
     let args = Args::parse();
-    TreetopApp::run(TreetopApp::new(ProcessWatcher::new(System::new()), args)?)
+    if args.help {
+        Args::command().print_long_help()?;
+    } else {
+        TreetopApp::run(TreetopApp::new(ProcessWatcher::new(System::new()), args)?)?;
+    }
+    Ok(())
 }
