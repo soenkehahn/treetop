@@ -211,7 +211,7 @@ mod test {
 
     impl Display for TestNode {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            write!(f, "{}", crate::utils::test::render_number(self.id))
+            write!(f, "{}", crate::utils::test_utils::render_number(self.id))
         }
     }
 

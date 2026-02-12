@@ -25,11 +25,11 @@ impl SearchPattern {
         }
     }
 
-    pub(crate) fn find(&self, s: &str) -> Option<Range<usize>> {
+    pub(crate) fn find(&self, s: &str) -> Vec<Range<usize>> {
         match self {
-            SearchPattern::Empty => None,
-            SearchPattern::Regex { regex } => regex.find(s).map(|m| m.range()),
-            SearchPattern::Invalid { .. } => None,
+            SearchPattern::Empty => Vec::new(),
+            SearchPattern::Regex { regex } => regex.find_iter(s).map(|m| m.range()).collect(),
+            SearchPattern::Invalid { .. } => Vec::new(),
         }
     }
 
