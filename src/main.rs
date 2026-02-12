@@ -1,6 +1,6 @@
 use crate::process::ProcessWatcher;
 use crate::treetop_app::TreetopApp;
-use clap::Parser;
+use clap::{ArgAction, Parser};
 use std::error::Error;
 use sysinfo::System;
 
@@ -15,7 +15,12 @@ type R<A> = Result<A, Box<dyn Error>>;
 
 #[derive(Parser, Debug)]
 #[cfg_attr(test, derive(Default))]
+#[command(disable_help_flag = true)]
 struct Args {
+    #[arg(short = 'h', long = "help", action = ArgAction::HelpLong)]
+    /// Print this help
+    help: bool,
+
     /// Search pattern for filtering the process tree
     pattern: Option<String>,
 
