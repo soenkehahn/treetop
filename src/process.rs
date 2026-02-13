@@ -315,7 +315,6 @@ impl ProcessWatcher {
 #[cfg(test)]
 pub(crate) mod test {
     use super::*;
-    use crate::R;
     use std::string::ToString;
 
     impl Process {
@@ -366,7 +365,7 @@ pub(crate) mod test {
         use super::*;
 
         #[test]
-        fn is_match_considers_arguments() -> R<()> {
+        fn is_match_considers_arguments() {
             assert!(!Process::default()
                 .set_arguments(vec!["foo"])
                 .get_matches(
@@ -391,11 +390,10 @@ pub(crate) mod test {
                     &Args::default()
                 )
                 .is_empty());
-            Ok(())
         }
 
         #[test]
-        fn filtering_by_matching_on_multiple_process_arguments() -> R<()> {
+        fn filtering_by_matching_on_multiple_process_arguments() {
             assert!(!Process::default()
                 .set_arguments(vec!["foo", "bar"])
                 .get_matches(
@@ -421,11 +419,10 @@ pub(crate) mod test {
                     &Args::default()
                 )
                 .is_empty());
-            Ok(())
         }
 
         #[test]
-        fn is_match_hides_treetop_for_arguments() -> R<()> {
+        fn is_match_hides_treetop_for_arguments() {
             let process = Process {
                 pid: 42.into(),
                 name: "treetop".to_string(),
@@ -460,11 +457,10 @@ pub(crate) mod test {
                     &Args::default()
                 )
                 .is_empty());
-            Ok(())
         }
 
         #[test]
-        fn is_match_shows_treetop_when_asked_to() -> R<()> {
+        fn is_match_shows_treetop_when_asked_to() {
             let process = Process {
                 pid: 42.into(),
                 name: "treetop".to_string(),
@@ -481,7 +477,6 @@ pub(crate) mod test {
                     }
                 )
                 .is_empty());
-            Ok(())
         }
     }
 }

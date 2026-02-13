@@ -77,7 +77,7 @@ mod test {
             (vec!["foo"], (5..7), vec!["foo".into()]),
         ];
         for (spans, range, expected) in cases {
-            let mut spans = spans.into_iter().map(|x| Span::from(x)).collect();
+            let mut spans = spans.into_iter().map(Span::from).collect();
             spans = style_spans_single(spans, range, Style::default().bold());
             assert_eq!(spans, expected);
         }
@@ -112,6 +112,6 @@ pub(crate) mod test_utils {
             result.push(char);
             result.push('\u{35f}');
         }
-        return result;
+        result
     }
 }
