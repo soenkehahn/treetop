@@ -30,6 +30,7 @@ pub(crate) struct Process {
     cpu: f32,
     ram: u64,
     pub(crate) matched: Vec<Match>,
+    pub(crate) visible: bool,
 }
 
 impl fmt::Display for Process {
@@ -88,6 +89,7 @@ impl Process {
             cpu: process.cpu_usage(),
             ram: process.memory(),
             matched: Vec::new(),
+            visible: true,
         }
     }
 
@@ -295,6 +297,7 @@ pub(crate) mod test {
                 cpu,
                 ram: 0,
                 matched: vec![],
+                visible: true,
             }
         }
 
@@ -319,6 +322,7 @@ pub(crate) mod test {
                 cpu: 0.0,
                 ram: 0,
                 matched: vec![],
+                visible: true,
             }
         }
     }

@@ -97,6 +97,28 @@ where
         Iter(self.0.iter().rev().collect())
     }
 
+    pub(crate) fn iter_mut(&mut self) -> impl Iterator<Item = &mut Node> {
+        struct Iter<'a, Node>(VecDeque<&'a mut Tree<Node>>);
+
+        impl<'a, Node> Iterator for Iter<'a, Node> {
+            type Item = &'a mut Node;
+
+            fn next(&mut self) -> Option<&'a mut Node> {
+                match self.0.pop_front() {
+                    Some(tree) => {
+                        for child in tree.children.0.iter_mut().rev() {
+                            self.0.push_front(child);
+                        }
+                        Some(&mut tree.node)
+                    }
+                    None => None,
+                }
+            }
+        }
+
+        Iter(self.0.iter_mut().rev().collect())
+    }
+
     pub(crate) fn sort_by<F>(&mut self, compare: &F)
     where
         F: Fn(&Node, &Node) -> Ordering,
@@ -118,14 +140,14 @@ where
 
     pub(crate) fn filter<F>(&mut self, filter: F)
     where
-        F: Fn(&mut Node) -> bool,
+        F: Fn(&Node) -> bool,
     {
         self.filter_helper(&filter, false);
     }
 
     fn filter_helper<F>(&mut self, filter: &F, parent_included: bool) -> bool
     where
-        F: Fn(&mut Node) -> bool,
+        F: Fn(&Node) -> bool,
     {
         let mut any_child_included = false;
         let mut old = Forest(Vec::new());

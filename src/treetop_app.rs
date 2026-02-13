@@ -73,18 +73,20 @@ impl TreetopApp {
         self.forest = self.process_watcher.get_forest();
         self.forest
             .sort_by(&|a, b| Process::compare(a, b, self.sort_column));
-        self.forest.filter(|p| {
+        for node in self.forest.iter_mut() {
             if let SearchPattern::Empty = self.pattern {
-                p.matched = vec![];
-                return true;
+                node.matched = vec![];
+                node.visible = true;
+                continue;
             }
-            p.matched = p.get_matches(
+            node.matched = node.get_matches(
                 &self.pattern,
                 sysinfo::Pid::from_u32(process::id()),
                 &self.args,
             );
-            !p.matched.is_empty()
-        });
+            node.visible = !node.matched.is_empty();
+        }
+        self.forest.filter(|p| p.visible);
         if let UiMode::ProcessSelected(selected) = self.ui_mode {
             if !self.forest.iter().any(|node| node.id() == selected) {
                 self.ui_mode = UiMode::Normal;
@@ -466,7 +468,6 @@ mod test {
     }
 
     #[test]
-    // TODO: test highlight works if both parent and child match (both should be highlighted?)
     fn filtering() -> R<()> {
         let mut app = test_app(vec![
             Process::fake(1, 1.0, None),
@@ -565,6 +566,18 @@ mod test {
     fn filtering_highlights_multiple_matches_in_pid() -> R<()> {
         let mut app = test_app(vec![Process::fake(121, 0.0, None)])?;
         set_pattern(&mut app, "1")?;
+        app.tick();
+        assert_snapshot!(render_ui(&mut app));
+        Ok(())
+    }
+
+    #[test]
+    fn filtering_highlights_both_matching_parents_and_matching_children() -> R<()> {
+        let mut app = test_app(vec![
+            Process::fake(1, 0.0, None).set_arguments(vec!["foo"]),
+            Process::fake(2, 0.0, Some(1)).set_arguments(vec!["foo"]),
+        ])?;
+        set_pattern(&mut app, "foo")?;
         app.tick();
         assert_snapshot!(render_ui(&mut app));
         Ok(())
