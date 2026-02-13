@@ -206,15 +206,17 @@ impl tui_app::TuiApp for TreetopApp {
                 process_string = process_string.reversed().blue();
             }
             // TODO: change
-            let mut x = vec![process_string];
+            let mut command_snippets = vec![process_string];
             for m in with_prefix.node.visible.matches() {
                 if let Match::InCommand(range) = m {
-                    style_spans(&mut x, range.clone(), Style::new().fg(Color::Red).bold());
+                    command_snippets = style_spans(
+                        &command_snippets,
+                        range.clone(),
+                        Style::new().fg(Color::Red).bold(),
+                    );
                 }
             }
-            for x in x {
-                spans.push(x);
-            }
+            spans.extend(command_snippets);
             Line::from(spans)
         });
         StatefulWidget::render(

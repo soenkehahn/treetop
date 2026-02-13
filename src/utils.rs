@@ -2,9 +2,13 @@ use ratatui::{style::Style, text::Span};
 use std::ops::Range;
 
 // TODO: less allocations?
-pub(crate) fn style_spans(line: &mut Vec<Span>, mut range: Range<usize>, style: Style) {
+pub(crate) fn style_spans(
+    line: &Vec<Span>,
+    mut range: Range<usize>,
+    style: Style,
+) -> Vec<Span<'static>> {
     let mut result = Vec::new();
-    for span in &mut *line {
+    for span in line {
         let (a, b, c) = split_span(span, &range);
         for snippet in [a, b.patch_style(style), c] {
             if !snippet.content.is_empty() {
@@ -14,7 +18,7 @@ pub(crate) fn style_spans(line: &mut Vec<Span>, mut range: Range<usize>, style: 
         range.start = range.start.saturating_sub(span.content.len());
         range.end = range.end.saturating_sub(span.content.len());
     }
-    *line = result;
+    result
 }
 
 fn split_span(s: &Span, r: &Range<usize>) -> (Span<'static>, Span<'static>, Span<'static>) {
@@ -67,7 +71,7 @@ mod test {
         ];
         for (spans, range, expected) in cases {
             let mut spans = spans.into_iter().map(|x| Span::from(x)).collect();
-            style_spans(&mut spans, range, Style::default().bold());
+            spans = style_spans(&mut spans, range, Style::default().bold());
             assert_eq!(spans, expected);
         }
     }
@@ -75,7 +79,7 @@ mod test {
     #[test]
     fn style_spans_maintains_existing_styles() {
         let mut spans = vec![Span::from("foo").underlined()];
-        style_spans(&mut spans, 0..3, Style::default().bold());
+        spans = style_spans(&mut spans, 0..3, Style::default().bold());
         assert_eq!(spans, vec![Span::from("foo").underlined().bold()]);
     }
 }

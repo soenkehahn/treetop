@@ -213,15 +213,17 @@ impl Process {
         let mut result: Vec<Span> = Vec::new();
         let pid = self.pid.as_u32().to_string();
         result.push(" ".repeat(8 - pid.len()).into());
-        let mut x = vec![pid.into()];
+        let mut pid_spans = vec![pid.into()];
         for m in self.visible.matches() {
             if let Match::InPid(range) = m {
-                style_spans(&mut x, range.clone(), Style::new().fg(Color::Red).bold());
+                pid_spans = style_spans(
+                    &pid_spans,
+                    range.clone(),
+                    Style::new().fg(Color::Red).bold(),
+                );
             }
         }
-        for x in x {
-            result.push(x);
-        }
+        result.extend(pid_spans);
         result.push(format!(" {:>4.0}%", self.cpu).into());
         result.push(
             format!(
