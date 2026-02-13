@@ -205,17 +205,14 @@ impl tui_app::TuiApp for TreetopApp {
             if self.ui_mode == UiMode::ProcessSelected(with_prefix.node.id()) {
                 process_string = process_string.reversed().blue();
             }
-            // TODO: change
-            let mut command_snippets = vec![process_string];
-            for m in with_prefix.node.visible.matches() {
-                if let Match::InCommand(range) = m {
-                    command_snippets = style_spans(
-                        &command_snippets,
-                        range.clone(),
-                        Style::new().fg(Color::Red).bold(),
-                    );
-                }
-            }
+            let command_snippets = style_spans(
+                vec![process_string],
+                with_prefix.node.visible.matches().filter_map(|m| match m {
+                    Match::InCommand(range) => Some(range.clone()),
+                    Match::InPid(_) => None,
+                }),
+                Style::new().fg(Color::Red).bold(),
+            );
             spans.extend(command_snippets);
             Line::from(spans)
         });

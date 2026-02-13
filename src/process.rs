@@ -208,21 +208,18 @@ impl Process {
         2
     }
 
-    // TODO: less allocations?
     pub(crate) fn table_data(&self) -> Vec<Span<'static>> {
         let mut result: Vec<Span> = Vec::new();
         let pid = self.pid.as_u32().to_string();
         result.push(" ".repeat(8 - pid.len()).into());
-        let mut pid_spans = vec![pid.into()];
-        for m in self.visible.matches() {
-            if let Match::InPid(range) = m {
-                pid_spans = style_spans(
-                    &pid_spans,
-                    range.clone(),
-                    Style::new().fg(Color::Red).bold(),
-                );
-            }
-        }
+        let pid_spans = style_spans(
+            vec![pid.into()],
+            self.visible.matches().filter_map(|m| match m {
+                Match::InPid(range) => Some(range.clone()),
+                Match::InCommand(_) => None,
+            }),
+            Style::new().fg(Color::Red).bold(),
+        );
         result.extend(pid_spans);
         result.push(format!(" {:>4.0}%", self.cpu).into());
         result.push(
