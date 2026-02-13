@@ -1,6 +1,7 @@
 use crate::process::Match;
 use crate::process::ProcessWatcher;
 use crate::process::SortBy;
+use crate::process::Visible;
 use crate::search_pattern::SearchPattern;
 use crate::tree::Forest;
 use crate::utils::style_spans;
@@ -24,7 +25,6 @@ use ratatui::{
     style::Stylize,
     widgets::{List, ListState, Paragraph, StatefulWidget, Widget},
 };
-use std::process;
 
 #[derive(Debug)]
 pub(crate) struct TreetopApp {
@@ -74,19 +74,10 @@ impl TreetopApp {
         self.forest
             .sort_by(&|a, b| Process::compare(a, b, self.sort_column));
         for node in self.forest.iter_mut() {
-            if let SearchPattern::Empty = self.pattern {
-                node.matched = vec![];
-                node.visible = true;
-                continue;
-            }
-            node.matched = node.get_matches(
-                &self.pattern,
-                sysinfo::Pid::from_u32(process::id()),
-                &self.args,
-            );
-            node.visible = !node.matched.is_empty();
+            node.update_visible(&self.pattern, &self.args);
         }
-        self.forest.filter(|p| p.visible);
+        self.forest
+            .filter(|p| matches!(p.visible, Visible::Visible(_)));
         if let UiMode::ProcessSelected(selected) = self.ui_mode {
             if !self.forest.iter().any(|node| node.id() == selected) {
                 self.ui_mode = UiMode::Normal;
@@ -216,7 +207,7 @@ impl tui_app::TuiApp for TreetopApp {
             }
             // TODO: change
             let mut x = vec![process_string];
-            for m in &with_prefix.node.matched {
+            for m in with_prefix.node.visible.get_matches() {
                 if let Match::InCommand(range) = m {
                     style_spans(&mut x, range.clone(), Style::new().fg(Color::Red).bold());
                 }

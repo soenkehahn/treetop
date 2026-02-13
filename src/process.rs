@@ -22,6 +22,27 @@ use sysinfo::ThreadKind;
 use sysinfo::UpdateKind;
 
 #[derive(Debug, Clone)]
+pub(crate) enum Visible {
+    Visible(Vec<Match>),
+    NotVisible,
+}
+
+impl Default for Visible {
+    fn default() -> Self {
+        Visible::Visible(Vec::new())
+    }
+}
+
+impl Visible {
+    pub(crate) fn get_matches(&self) -> impl Iterator<Item = &Match> {
+        match self {
+            Visible::Visible(items) => items.iter(),
+            Visible::NotVisible => [].iter(),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
 pub(crate) struct Process {
     pid: Pid,
     pub(crate) name: String,
@@ -29,8 +50,7 @@ pub(crate) struct Process {
     parent: Option<Pid>,
     cpu: f32,
     ram: u64,
-    pub(crate) matched: Vec<Match>,
-    pub(crate) visible: bool,
+    pub(crate) visible: Visible,
 }
 
 impl fmt::Display for Process {
@@ -88,8 +108,7 @@ impl Process {
             parent: process.parent(),
             cpu: process.cpu_usage(),
             ram: process.memory(),
-            matched: Vec::new(),
-            visible: true,
+            visible: Visible::default(),
         }
     }
 
@@ -105,12 +124,23 @@ impl Process {
         }
     }
 
-    pub(crate) fn get_matches(
-        &self,
-        pattern: &SearchPattern,
-        treetop_pid: Pid,
-        args: &Args,
-    ) -> Vec<Match> {
+    pub(crate) fn update_visible(&mut self, pattern: &SearchPattern, args: &Args) {
+        self.visible = {
+            if let SearchPattern::Empty = pattern {
+                Visible::Visible(Vec::new())
+            } else {
+                let matches =
+                    self.get_matches(pattern, sysinfo::Pid::from_u32(std::process::id()), args);
+                if matches.is_empty() {
+                    Visible::NotVisible
+                } else {
+                    Visible::Visible(matches)
+                }
+            }
+        }
+    }
+
+    fn get_matches(&self, pattern: &SearchPattern, treetop_pid: Pid, args: &Args) -> Vec<Match> {
         let mut result = Vec::new();
         for range in pattern.find(&self.name) {
             result.push(Match::InCommand(range));
@@ -182,7 +212,7 @@ impl Process {
         let pid = self.pid.as_u32().to_string();
         result.push(" ".repeat(8 - pid.len()).into());
         let mut x = vec![pid.into()];
-        for m in &self.matched {
+        for m in self.visible.get_matches() {
             if let Match::InPid(range) = m {
                 style_spans(&mut x, range.clone(), Style::new().fg(Color::Red).bold());
             }
@@ -296,8 +326,7 @@ pub(crate) mod test {
                 parent: parent.map(From::from),
                 cpu,
                 ram: 0,
-                matched: vec![],
-                visible: true,
+                visible: Visible::default(),
             }
         }
 
@@ -321,8 +350,7 @@ pub(crate) mod test {
                 parent: None,
                 cpu: 0.0,
                 ram: 0,
-                matched: vec![],
-                visible: true,
+                visible: Visible::default(),
             }
         }
     }
