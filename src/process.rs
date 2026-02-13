@@ -1,6 +1,7 @@
 use crate::search_pattern::SearchPattern;
 pub(crate) use crate::tree::Forest;
 use crate::tree::Node;
+use crate::utils::highlight_style;
 use crate::utils::style_spans;
 use crate::Args;
 use num_format::Locale;
@@ -8,7 +9,6 @@ use num_format::ToFormattedString;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::prelude::Stylize;
-use ratatui::style::Color;
 use ratatui::style::Modifier;
 use ratatui::style::Style;
 use ratatui::text::Line;
@@ -40,6 +40,12 @@ impl Visible {
             Visible::NotVisible => [].iter(),
         }
     }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum Match {
+    InPid(Range<usize>),
+    InCommand(Range<usize>),
 }
 
 #[derive(Debug, Clone)]
@@ -80,18 +86,12 @@ impl Node for Process {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) enum Match {
-    InPid(Range<usize>),
-    InCommand(Range<usize>),
-}
-
 impl Process {
     fn from_sysinfo_process(process: &sysinfo::Process) -> Self {
-        let mut vec = process.cmd().to_vec().into_iter();
+        let mut command_words = process.cmd().to_vec().into_iter();
         Process {
             pid: process.pid(),
-            name: match vec.next() {
+            name: match command_words.next() {
                 Some(executable) => match Path::new(&executable).file_name() {
                     Some(file_name) => file_name.to_string_lossy().to_string(),
                     None => executable,
@@ -104,7 +104,7 @@ impl Process {
                     None => process.name().to_string(),
                 },
             },
-            arguments: vec.collect(),
+            arguments: command_words.collect(),
             parent: process.parent(),
             cpu: process.cpu_usage(),
             ram: process.memory(),
@@ -218,7 +218,7 @@ impl Process {
                 Match::InPid(range) => Some(range.clone()),
                 Match::InCommand(_) => None,
             }),
-            Style::new().fg(Color::Red).bold(),
+            highlight_style(),
         );
         result.extend(pid_spans);
         result.push(format!(" {:>4.0}%", self.cpu).into());

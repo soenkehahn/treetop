@@ -153,7 +153,7 @@ where
         let mut old = Forest(Vec::new());
         std::mem::swap(self, &mut old);
         for mut tree in old.0 {
-            if parent_included || filter(&mut tree.node) {
+            if parent_included || filter(&tree.node) {
                 tree.children.filter_helper(filter, true);
                 self.0.push(tree);
                 any_child_included = true;

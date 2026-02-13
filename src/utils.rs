@@ -1,5 +1,12 @@
-use ratatui::{style::Style, text::Span};
+use ratatui::{
+    style::{Color, Style, Stylize},
+    text::Span,
+};
 use std::ops::Range;
+
+pub(crate) fn highlight_style() -> Style {
+    Style::new().fg(Color::Red).bold()
+}
 
 pub(crate) fn style_spans(
     mut spans: Vec<Span>,
@@ -7,7 +14,7 @@ pub(crate) fn style_spans(
     style: Style,
 ) -> Vec<Span> {
     for range in ranges {
-        spans = style_spans_single(spans, range.clone(), style);
+        spans = style_spans_single(spans, range, style);
     }
     spans
 }
@@ -19,7 +26,7 @@ fn style_spans_single(spans: Vec<Span>, mut range: Range<usize>, style: Style) -
         let (a, b, c) = split_span(&span, &range);
         for snippet in [a, b.patch_style(style), c] {
             if !snippet.content.is_empty() {
-                result.push(snippet.clone());
+                result.push(snippet);
             }
         }
         range.start = range.start.saturating_sub(len);

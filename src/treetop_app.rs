@@ -4,6 +4,7 @@ use crate::process::SortBy;
 use crate::process::Visible;
 use crate::search_pattern::SearchPattern;
 use crate::tree::Forest;
+use crate::utils::highlight_style;
 use crate::utils::style_spans;
 use crate::Args;
 use crate::{
@@ -15,8 +16,6 @@ use crate::{
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use nix::errno::Errno;
 use nix::sys::signal::kill;
-use ratatui::style::Color;
-use ratatui::style::Style;
 use ratatui::text::Line;
 use ratatui::text::Span;
 use ratatui::{
@@ -211,7 +210,7 @@ impl tui_app::TuiApp for TreetopApp {
                     Match::InCommand(range) => Some(range.clone()),
                     Match::InPid(_) => None,
                 }),
-                Style::new().fg(Color::Red).bold(),
+                highlight_style(),
             );
             spans.extend(command_snippets);
             Line::from(spans)
