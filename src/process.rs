@@ -142,16 +142,18 @@ impl Process {
 
     fn get_matches(&self, pattern: &SearchPattern, treetop_pid: Pid, args: &Args) -> Vec<Match> {
         let mut result = Vec::new();
-        for range in pattern.find(&self.name) {
-            result.push(Match::InCommand(range));
-        }
         for range in pattern.find(&self.id().to_string()) {
             result.push(Match::InPid(range));
         }
-        for mut range in pattern.find(&self.arguments.join(" ")) {
-            if args.dont_hide_self || treetop_pid != self.id() {
-                range.start += self.name.len() + 1;
-                range.end += self.name.len() + 1;
+        let mut command = self.name.clone();
+        for arg in &self.arguments {
+            command += " ";
+            command += arg;
+        }
+        for range in pattern.find(&command) {
+            if treetop_pid == self.id() && !args.dont_hide_self && range.end > self.name.len() {
+                // hide treetop
+            } else {
                 result.push(Match::InCommand(range));
             }
         }
@@ -405,6 +407,15 @@ pub(crate) mod test {
                 .is_empty());
             assert!(!Process::default()
                 .set_arguments(vec!["foo", "bar"])
+                .get_matches(
+                    &SearchPattern::from_string("foo bar"),
+                    0.into(),
+                    &Args::default()
+                )
+                .is_empty());
+            assert!(!Process::default()
+                .set_name("foo")
+                .set_arguments(vec!["bar"])
                 .get_matches(
                     &SearchPattern::from_string("foo bar"),
                     0.into(),
