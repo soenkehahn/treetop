@@ -48,7 +48,7 @@ impl TreetopApp {
     pub(crate) fn new(process_watcher: ProcessWatcher, args: Args) -> TreetopApp {
         let pattern = args
             .pattern
-            .as_ref()
+            .clone()
             .map_or(SearchPattern::empty(), |pattern| {
                 SearchPattern::from_string(pattern)
             });
@@ -399,7 +399,7 @@ mod test {
     }
 
     fn set_pattern(app: &mut TreetopApp, pattern: &str) {
-        app.pattern = crate::search_pattern::SearchPattern::from_string(pattern);
+        app.pattern = crate::search_pattern::SearchPattern::from_string(pattern.to_string());
     }
 
     #[test]

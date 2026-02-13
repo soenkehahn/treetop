@@ -369,7 +369,7 @@ pub(crate) mod test {
             assert!(!Process::default()
                 .set_arguments(vec!["foo"])
                 .get_matches(
-                    &SearchPattern::from_string("foo"),
+                    &SearchPattern::from_string("foo".to_string()),
                     0.into(),
                     &Args::default()
                 )
@@ -377,7 +377,7 @@ pub(crate) mod test {
             assert!(Process::default()
                 .set_arguments(vec!["foo"])
                 .get_matches(
-                    &SearchPattern::from_string("bar"),
+                    &SearchPattern::from_string("bar".to_string()),
                     0.into(),
                     &Args::default()
                 )
@@ -385,7 +385,7 @@ pub(crate) mod test {
             assert!(!Process::default()
                 .set_arguments(vec!["foobarbaz"])
                 .get_matches(
-                    &SearchPattern::from_string("bar"),
+                    &SearchPattern::from_string("bar".to_string()),
                     0.into(),
                     &Args::default()
                 )
@@ -397,7 +397,7 @@ pub(crate) mod test {
             assert!(!Process::default()
                 .set_arguments(vec!["foo", "bar"])
                 .get_matches(
-                    &SearchPattern::from_string("fo.*ar"),
+                    &SearchPattern::from_string("fo.*ar".to_string()),
                     0.into(),
                     &Args::default()
                 )
@@ -405,7 +405,7 @@ pub(crate) mod test {
             assert!(!Process::default()
                 .set_arguments(vec!["foo", "bar"])
                 .get_matches(
-                    &SearchPattern::from_string("foo bar"),
+                    &SearchPattern::from_string("foo bar".to_string()),
                     0.into(),
                     &Args::default()
                 )
@@ -414,7 +414,7 @@ pub(crate) mod test {
                 .set_name("foo")
                 .set_arguments(vec!["bar"])
                 .get_matches(
-                    &SearchPattern::from_string("foo bar"),
+                    &SearchPattern::from_string("foo bar".to_string()),
                     0.into(),
                     &Args::default()
                 )
@@ -431,28 +431,28 @@ pub(crate) mod test {
             };
             assert!(process
                 .get_matches(
-                    &SearchPattern::from_string("foo"),
+                    &SearchPattern::from_string("foo".to_string()),
                     42.into(),
                     &Args::default()
                 )
                 .is_empty());
             assert!(!process
                 .get_matches(
-                    &SearchPattern::from_string("foo"),
+                    &SearchPattern::from_string("foo".to_string()),
                     43.into(),
                     &Args::default()
                 )
                 .is_empty());
             assert!(!process
                 .get_matches(
-                    &SearchPattern::from_string("treetop"),
+                    &SearchPattern::from_string("treetop".to_string()),
                     42.into(),
                     &Args::default()
                 )
                 .is_empty());
             assert!(!process
                 .get_matches(
-                    &SearchPattern::from_string("42"),
+                    &SearchPattern::from_string("42".to_string()),
                     42.into(),
                     &Args::default()
                 )
@@ -469,7 +469,7 @@ pub(crate) mod test {
             };
             assert!(!process
                 .get_matches(
-                    &SearchPattern::from_string("foo"),
+                    &SearchPattern::from_string("foo".to_string()),
                     42.into(),
                     &Args {
                         dont_hide_self: true,
