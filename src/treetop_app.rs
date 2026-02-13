@@ -207,7 +207,7 @@ impl tui_app::TuiApp for TreetopApp {
             }
             // TODO: change
             let mut x = vec![process_string];
-            for m in with_prefix.node.visible.get_matches() {
+            for m in with_prefix.node.visible.matches() {
                 if let Match::InCommand(range) = m {
                     style_spans(&mut x, range.clone(), Style::new().fg(Color::Red).bold());
                 }

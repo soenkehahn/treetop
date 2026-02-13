@@ -34,7 +34,7 @@ impl Default for Visible {
 }
 
 impl Visible {
-    pub(crate) fn get_matches(&self) -> impl Iterator<Item = &Match> {
+    pub(crate) fn matches(&self) -> impl Iterator<Item = &Match> {
         match self {
             Visible::Visible(items) => items.iter(),
             Visible::NotVisible => [].iter(),
@@ -146,9 +146,9 @@ impl Process {
             result.push(Match::InPid(range));
         }
         let mut command = self.name.clone();
-        for arg in &self.arguments {
+        for argument in &self.arguments {
             command += " ";
-            command += arg;
+            command += argument;
         }
         for range in pattern.find(&command) {
             if treetop_pid == self.id() && !args.dont_hide_self && range.end > self.name.len() {
@@ -214,7 +214,7 @@ impl Process {
         let pid = self.pid.as_u32().to_string();
         result.push(" ".repeat(8 - pid.len()).into());
         let mut x = vec![pid.into()];
-        for m in self.visible.get_matches() {
+        for m in self.visible.matches() {
             if let Match::InPid(range) = m {
                 style_spans(&mut x, range.clone(), Style::new().fg(Color::Red).bold());
             }
