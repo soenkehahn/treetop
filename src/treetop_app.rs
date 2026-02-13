@@ -1,9 +1,11 @@
-use std::process;
-
+use crate::process::Match;
 use crate::process::ProcessWatcher;
 use crate::process::SortBy;
-use crate::regex::Regex;
+use crate::process::Visible;
+use crate::search_pattern::SearchPattern;
 use crate::tree::Forest;
+use crate::utils::highlight_style;
+use crate::utils::style_spans;
 use crate::Args;
 use crate::{
     process::Process,
@@ -14,11 +16,12 @@ use crate::{
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use nix::errno::Errno;
 use nix::sys::signal::kill;
+use ratatui::text::Line;
+use ratatui::text::Span;
 use ratatui::{
     buffer::Buffer,
     layout::Rect,
     style::Stylize,
-    text::Line,
     widgets::{List, ListState, Paragraph, StatefulWidget, Widget},
 };
 
@@ -27,7 +30,7 @@ pub(crate) struct TreetopApp {
     args: Args,
     process_watcher: ProcessWatcher,
     forest: Forest<Process>,
-    pattern: Regex,
+    pattern: SearchPattern,
     list_state: ListState,
     ui_mode: UiMode,
     sort_column: SortBy,
@@ -42,14 +45,14 @@ enum UiMode {
 }
 
 impl TreetopApp {
-    pub(crate) fn new(process_watcher: ProcessWatcher, args: Args) -> R<TreetopApp> {
+    pub(crate) fn new(process_watcher: ProcessWatcher, args: Args) -> TreetopApp {
         let pattern = args
             .pattern
             .as_ref()
-            .map(|pattern| Regex::new(pattern))
-            .transpose()?
-            .unwrap_or(Regex::empty()?);
-        Ok(TreetopApp {
+            .map_or(SearchPattern::empty(), |pattern| {
+                SearchPattern::from_string(pattern)
+            });
+        TreetopApp {
             args,
             process_watcher,
             forest: Forest::empty(),
@@ -58,7 +61,7 @@ impl TreetopApp {
             ui_mode: UiMode::Normal,
             sort_column: SortBy::default(),
             error_state: None,
-        })
+        }
     }
 
     pub(crate) fn run(self) -> R<()> {
@@ -69,13 +72,11 @@ impl TreetopApp {
         self.forest = self.process_watcher.get_forest();
         self.forest
             .sort_by(&|a, b| Process::compare(a, b, self.sort_column));
-        self.forest.filter(|p| {
-            p.is_match(
-                &self.pattern,
-                sysinfo::Pid::from_u32(process::id()),
-                &self.args,
-            )
-        });
+        for node in self.forest.iter_mut() {
+            node.update_visible(&self.pattern, &self.args);
+        }
+        self.forest
+            .filter(|p| matches!(p.visible, Visible::Visible(_)));
         if let UiMode::ProcessSelected(selected) = self.ui_mode {
             if !self.forest.iter().any(|node| node.id() == selected) {
                 self.ui_mode = UiMode::Normal;
@@ -124,7 +125,7 @@ impl tui_app::TuiApp for TreetopApp {
                         .into_iter()
                         .nth(selected)
                     {
-                        self.ui_mode = UiMode::ProcessSelected(process.1.id());
+                        self.ui_mode = UiMode::ProcessSelected(process.node.id());
                     }
                 }
             }
@@ -190,22 +191,29 @@ impl tui_app::TuiApp for TreetopApp {
         };
         let list = self.forest.render_forest_prefixes();
         normalize_list_state(&mut self.list_state, &list, list_rect);
-        let tree_lines = list.iter().enumerate().map(|(i, x)| {
-            let mut line = Line::default();
-            line.push_span(format!("{} ", x.1.table_data()));
-            line.push_span("┃".dark_gray());
-            line.push_span(if self.list_state.selected() == Some(i) {
-                " ▶ "
+        let tree_lines = list.iter().enumerate().map(|(index, with_prefix)| {
+            let mut spans = with_prefix.node.table_data();
+            spans.push(" ┃".dark_gray());
+            spans.push(if self.list_state.selected() == Some(index) {
+                " ▶ ".into()
             } else {
-                "   "
+                "   ".into()
             });
-            line.push_span(x.0.as_str().blue());
-            line.push_span(if self.ui_mode == UiMode::ProcessSelected(x.1.id()) {
-                x.1.to_string().reversed().blue()
-            } else {
-                x.1.to_string().not_reversed()
-            });
-            line
+            spans.push(with_prefix.prefix.as_str().blue());
+            let mut process_string = Span::raw(with_prefix.node.to_string());
+            if self.ui_mode == UiMode::ProcessSelected(with_prefix.node.id()) {
+                process_string = process_string.reversed().blue();
+            }
+            let command_snippets = style_spans(
+                vec![process_string],
+                with_prefix.node.visible.matches().filter_map(|m| match m {
+                    Match::InCommand(range) => Some(range.clone()),
+                    Match::InPid(_) => None,
+                }),
+                highlight_style(),
+            );
+            spans.extend(command_snippets);
+            Line::from(spans)
         });
         StatefulWidget::render(
             List::new(tree_lines),
@@ -349,14 +357,14 @@ mod test {
         assert_eq!(list_state.offset(), 10);
     }
 
-    fn test_app(processes: Vec<Process>) -> R<TreetopApp> {
+    fn test_app(processes: Vec<Process>) -> TreetopApp {
         test_app_with_args(processes, Args::default())
     }
 
-    fn test_app_with_args(processes: Vec<Process>, args: Args) -> R<TreetopApp> {
-        let mut app = TreetopApp::new(ProcessWatcher::fake(processes), args)?;
+    fn test_app_with_args(processes: Vec<Process>, args: Args) -> TreetopApp {
+        let mut app = TreetopApp::new(ProcessWatcher::fake(processes), args);
         app.tick();
-        Ok(app)
+        app
     }
 
     fn render_ui(app: &mut TreetopApp) -> String {
@@ -367,8 +375,10 @@ mod test {
         for y in 0..area.height {
             for x in 0..area.width {
                 let symbol = buffer[(x, y)].symbol();
-                let symbol = if buffer[(x, y)].modifier.contains(Modifier::REVERSED) {
-                    crate::utils::test::underline(symbol)
+                let symbol = if buffer[(x, y)].modifier.contains(Modifier::REVERSED)
+                    || buffer[(x, y)].modifier.contains(Modifier::BOLD)
+                {
+                    crate::utils::test_utils::underline(symbol)
                 } else {
                     symbol.to_string()
                 };
@@ -388,34 +398,31 @@ mod test {
         })
     }
 
-    fn set_pattern(app: &mut TreetopApp, pattern: &str) -> R<()> {
-        app.pattern = crate::regex::Regex::new(pattern)?;
-        Ok(())
+    fn set_pattern(app: &mut TreetopApp, pattern: &str) {
+        app.pattern = crate::search_pattern::SearchPattern::from_string(pattern);
     }
 
     #[test]
-    fn shows_a_tree_with_header_and_side_columns() -> R<()> {
+    fn shows_a_tree_with_header_and_side_columns() {
         let mut app = test_app(vec![
             Process::fake(1, 4.0, None),
             Process::fake(2, 3.0, Some(1)),
             Process::fake(3, 2.0, Some(2)),
             Process::fake(4, 1.0, None),
             Process::fake(5, 0.0, Some(4)),
-        ])?;
+        ]);
         assert_snapshot!(render_ui(&mut app));
-        Ok(())
     }
 
     #[test]
-    fn processes_get_sorted_by_pid() -> R<()> {
+    fn processes_get_sorted_by_pid() {
         let mut app = test_app(vec![
             Process::fake(1, 1.0, None),
             Process::fake(2, 2.0, None),
             Process::fake(3, 4.0, None),
             Process::fake(4, 3.0, None),
-        ])?;
+        ]);
         assert_snapshot!(render_ui(&mut app));
-        Ok(())
     }
 
     #[test]
@@ -425,14 +432,14 @@ mod test {
             Process::fake(2, 2.0, None),
             Process::fake(3, 4.0, None),
             Process::fake(4, 3.0, None),
-        ])?;
+        ]);
         simulate_key_press(&mut app, KeyCode::Tab)?;
         assert_snapshot!(render_ui(&mut app));
         Ok(())
     }
 
     #[test]
-    fn more_complicated_tree() -> R<()> {
+    fn more_complicated_tree() {
         let mut app = test_app(vec![
             Process::fake(1, 1.0, None),
             Process::fake(2, 2.0, Some(1)),
@@ -441,13 +448,12 @@ mod test {
             Process::fake(5, 5.0, Some(4)),
             Process::fake(6, 5.0, Some(4)),
             Process::fake(7, 5.0, Some(6)),
-        ])?;
+        ]);
         assert_snapshot!(render_ui(&mut app));
-        Ok(())
     }
 
     #[test]
-    fn filtering() -> R<()> {
+    fn filtering() {
         let mut app = test_app(vec![
             Process::fake(1, 1.0, None),
             Process::fake(2, 2.0, Some(1)),
@@ -456,68 +462,128 @@ mod test {
             Process::fake(5, 5.0, Some(4)),
             Process::fake(6, 5.0, Some(4)),
             Process::fake(7, 5.0, Some(6)),
-        ])?;
-        set_pattern(&mut app, "four")?;
+        ]);
+        set_pattern(&mut app, "four");
         app.tick();
         assert_snapshot!(render_ui(&mut app));
-        Ok(())
     }
 
     #[test]
-    fn filtering_with_regexes() -> R<()> {
+    fn filtering_highlights_substring_in_process_name() {
+        let mut app = test_app(vec![Process::fake(7, 1.0, None)]);
+        set_pattern(&mut app, "eve");
+        app.tick();
+        assert_snapshot!(render_ui(&mut app));
+    }
+
+    #[test]
+    fn filtering_highlights_substring_in_arguments() {
+        let mut app = test_app(vec![
+            Process::fake(1, 1.0, None).set_arguments(vec!["foobar"])
+        ]);
+        set_pattern(&mut app, "ob");
+        app.tick();
+        assert_snapshot!(render_ui(&mut app));
+    }
+
+    #[test]
+    fn filtering_with_regexes() {
         let mut app = test_app(vec![
             Process::fake(1, 0.0, None),
             Process::fake(2, 0.0, Some(1)),
             Process::fake(3, 0.0, Some(1)),
             Process::fake(4, 0.0, Some(1)),
-        ])?;
-        set_pattern(&mut app, "two|three")?;
+        ]);
+        set_pattern(&mut app, "two|three");
         app.tick();
         assert_snapshot!(render_ui(&mut app));
-        Ok(())
     }
 
     #[test]
-    fn filtering_by_pid() -> R<()> {
+    fn filtering_by_pid() {
         let mut app = test_app(vec![
             Process::fake(1, 0.0, None),
             Process::fake(2, 0.0, None),
             Process::fake(3, 0.0, None),
-        ])?;
-        set_pattern(&mut app, "2")?;
+        ]);
+        set_pattern(&mut app, "2");
         app.tick();
         assert_snapshot!(render_ui(&mut app));
-        Ok(())
     }
 
     #[test]
-    fn filtering_by_process_arguments() -> R<()> {
+    fn filtering_by_pid_highlights_substrings() {
+        let mut app = test_app(vec![Process::fake(1234, 0.0, None)]);
+        set_pattern(&mut app, "23");
+        app.tick();
+        assert_snapshot!(render_ui(&mut app));
+    }
+
+    #[test]
+    fn filtering_by_pid_and_name_highlights_both() {
+        let mut app = test_app(vec![
+            Process::fake(123, 0.0, None).set_arguments(vec!["123"])
+        ]);
+        set_pattern(&mut app, "123");
+        app.tick();
+        assert_snapshot!(render_ui(&mut app));
+    }
+
+    #[test]
+    fn filtering_highlights_multiple_matches_in_command() {
+        let mut app = test_app(vec![Process::fake(1, 0.0, None)
+            .set_name("eve")
+            .set_arguments(vec!["eve", "abcdefg"])]);
+        set_pattern(&mut app, "e");
+        app.tick();
+        assert_snapshot!(render_ui(&mut app));
+    }
+
+    #[test]
+    fn filtering_highlights_multiple_matches_in_pid() {
+        let mut app = test_app(vec![Process::fake(121, 0.0, None)]);
+        set_pattern(&mut app, "1");
+        app.tick();
+        assert_snapshot!(render_ui(&mut app));
+    }
+
+    #[test]
+    fn filtering_highlights_both_matching_parents_and_matching_children() {
+        let mut app = test_app(vec![
+            Process::fake(1, 0.0, None).set_arguments(vec!["foo"]),
+            Process::fake(2, 0.0, Some(1)).set_arguments(vec!["foo"]),
+        ]);
+        set_pattern(&mut app, "foo");
+        app.tick();
+        assert_snapshot!(render_ui(&mut app));
+    }
+
+    #[test]
+    fn filtering_by_process_arguments() {
         let mut app = test_app(vec![
             Process::fake(1, 0.0, None).set_arguments(vec!["foo"]),
             Process::fake(2, 0.0, None).set_arguments(vec!["bar"]),
             Process::fake(3, 0.0, None).set_arguments(vec!["baz"]),
-        ])?;
-        set_pattern(&mut app, "bar")?;
+        ]);
+        set_pattern(&mut app, "bar");
         app.tick();
         assert_snapshot!(render_ui(&mut app));
-        Ok(())
     }
 
     #[test]
-    fn filters_out_itself_by_default() -> R<()> {
+    fn filters_out_itself_by_default() {
         let mut app = test_app(vec![
             Process::fake(1, 0.0, None).set_arguments(vec!["foo"]),
             Process::fake(std::process::id() as usize, 0.0, None).set_arguments(vec!["bar"]),
             Process::fake(3, 0.0, None).set_arguments(vec!["baz"]),
-        ])?;
-        set_pattern(&mut app, "bar")?;
+        ]);
+        set_pattern(&mut app, "bar");
         app.tick();
         assert_snapshot!(render_ui(&mut app));
-        Ok(())
     }
 
     #[test]
-    fn does_not_filter_out_itself_when_asked_to() -> R<()> {
+    fn does_not_filter_out_itself_when_asked_to() {
         let mut app = test_app_with_args(
             vec![
                 Process::fake(1, 0.0, None).set_arguments(vec!["foo"]),
@@ -528,11 +594,10 @@ mod test {
                 dont_hide_self: true,
                 ..Args::default()
             },
-        )?;
-        set_pattern(&mut app, "bar")?;
+        );
+        set_pattern(&mut app, "bar");
         app.tick();
-        assert!(render_ui(&mut app).contains("bar"));
-        Ok(())
+        assert!(render_ui(&mut app).contains(&crate::utils::test_utils::underline("bar")));
     }
 
     #[test]
@@ -540,7 +605,7 @@ mod test {
         let mut app = test_app(vec![
             Process::fake(1, 0.0, None),
             Process::fake(2, 0.0, Some(1)),
-        ])?;
+        ]);
         simulate_key_press(&mut app, KeyCode::Char('/'))?;
         simulate_key_press(&mut app, KeyCode::Char('a'))?;
         simulate_key_press(&mut app, KeyCode::Char('b'))?;
@@ -556,7 +621,7 @@ mod test {
 
     #[test]
     fn exit_pattern_edit_mode() -> R<()> {
-        let mut app = test_app(vec![])?;
+        let mut app = test_app(vec![]);
         simulate_key_press(&mut app, KeyCode::Char('/'))?;
         simulate_key_press(&mut app, KeyCode::Enter)?;
         assert_eq!(app.ui_mode, UiMode::Normal);
@@ -570,7 +635,7 @@ mod test {
             Process::fake(2, 0.0, Some(1)),
             Process::fake(3, 0.0, None),
             Process::fake(4, 0.0, Some(3)),
-        ])?;
+        ]);
         assert_eq!(app.ui_mode, UiMode::Normal);
         simulate_key_press(&mut app, KeyCode::Enter)?;
         assert_eq!(app.ui_mode, UiMode::ProcessSelected(1.into()));
@@ -584,7 +649,7 @@ mod test {
 
     #[test]
     fn error_status_line() -> R<()> {
-        let mut app = test_app(vec![])?;
+        let mut app = test_app(vec![]);
         app.error_state = Some("test error".to_string());
         assert_snapshot!(render_ui(&mut app));
         simulate_key_press(&mut app, KeyCode::Char('&'))?;

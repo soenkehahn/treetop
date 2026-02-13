@@ -24,6 +24,12 @@ pub(crate) struct Tree<Node> {
 #[derive(Debug)]
 pub(crate) struct Forest<Node>(Vec<Tree<Node>>);
 
+#[derive(Debug)]
+pub(crate) struct WithPrefix<Node> {
+    pub(crate) prefix: String,
+    pub(crate) node: Node,
+}
+
 impl<Node> Forest<Node>
 where
     Node: crate::tree::Node + Display,
@@ -91,6 +97,28 @@ where
         Iter(self.0.iter().rev().collect())
     }
 
+    pub(crate) fn iter_mut(&mut self) -> impl Iterator<Item = &mut Node> {
+        struct Iter<'a, Node>(VecDeque<&'a mut Tree<Node>>);
+
+        impl<'a, Node> Iterator for Iter<'a, Node> {
+            type Item = &'a mut Node;
+
+            fn next(&mut self) -> Option<&'a mut Node> {
+                match self.0.pop_front() {
+                    Some(tree) => {
+                        for child in tree.children.0.iter_mut().rev() {
+                            self.0.push_front(child);
+                        }
+                        Some(&mut tree.node)
+                    }
+                    None => None,
+                }
+            }
+        }
+
+        Iter(self.0.iter_mut().rev().collect())
+    }
+
     pub(crate) fn sort_by<F>(&mut self, compare: &F)
     where
         F: Fn(&Node, &Node) -> Ordering,
@@ -137,7 +165,7 @@ where
         any_child_included
     }
 
-    pub(crate) fn render_forest_prefixes(&self) -> Vec<(String, &Node)> {
+    pub(crate) fn render_forest_prefixes(&self) -> Vec<WithPrefix<&Node>> {
         let mut acc = Vec::new();
         self.render_forest_prefixes_helper(true, &mut Vec::new(), &mut acc);
         acc
@@ -147,7 +175,7 @@ where
         &'a self,
         is_root: bool,
         prefixes: &mut Vec<&str>,
-        acc: &mut Vec<(String, &'a Node)>,
+        acc: &mut Vec<WithPrefix<&'a Node>>,
     ) {
         for (i, child) in self.0.iter().enumerate() {
             let is_last = i == self.0.len() - 1;
@@ -160,7 +188,10 @@ where
                 let has_children = !child.children.0.is_empty();
                 line += if has_children { "┬ " } else { "─ " };
             }
-            acc.push((line, &child.node));
+            acc.push(WithPrefix {
+                prefix: line,
+                node: &child.node,
+            });
             if !(is_root) {
                 prefixes.push(if is_last { "  " } else { "│ " });
             }
@@ -188,7 +219,7 @@ mod test {
             let table: Vec<String> = self
                 .render_forest_prefixes()
                 .into_iter()
-                .map(|x| format!("{}{}", x.0, x.1))
+                .map(|x| format!("{}{}", x.prefix, x.node))
                 .collect();
             format!("{}\n", table.join("\n"))
         }
@@ -202,7 +233,7 @@ mod test {
 
     impl Display for TestNode {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            write!(f, "{}", crate::utils::test::render_number(self.id))
+            write!(f, "{}", crate::utils::test_utils::render_number(self.id))
         }
     }
 

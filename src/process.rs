@@ -1,6 +1,8 @@
-use crate::regex::Regex;
+use crate::search_pattern::SearchPattern;
 pub(crate) use crate::tree::Forest;
 use crate::tree::Node;
+use crate::utils::highlight_style;
+use crate::utils::style_spans;
 use crate::Args;
 use num_format::Locale;
 use num_format::ToFormattedString;
@@ -12,11 +14,39 @@ use ratatui::style::Style;
 use ratatui::text::Line;
 use ratatui::text::Span;
 use std::fmt;
+use std::ops::Range;
 use std::path::Path;
 use sysinfo::Pid;
 use sysinfo::ProcessRefreshKind;
 use sysinfo::ThreadKind;
 use sysinfo::UpdateKind;
+
+#[derive(Debug, Clone)]
+pub(crate) enum Visible {
+    Visible(Vec<Match>),
+    NotVisible,
+}
+
+impl Default for Visible {
+    fn default() -> Self {
+        Visible::Visible(Vec::new())
+    }
+}
+
+impl Visible {
+    pub(crate) fn matches(&self) -> impl Iterator<Item = &Match> {
+        match self {
+            Visible::Visible(items) => items.iter(),
+            Visible::NotVisible => [].iter(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum Match {
+    InPid(Range<usize>),
+    InCommand(Range<usize>),
+}
 
 #[derive(Debug, Clone)]
 pub(crate) struct Process {
@@ -26,18 +56,13 @@ pub(crate) struct Process {
     parent: Option<Pid>,
     cpu: f32,
     ram: u64,
+    pub(crate) visible: Visible,
 }
 
 impl fmt::Display for Process {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self.arguments.first() {
-            Some(executable) => match Path::new(&executable).file_name() {
-                Some(file_name) => write!(f, "{}", file_name.to_string_lossy())?,
-                None => write!(f, "{executable}")?,
-            },
-            None => write!(f, "{}", self.name)?,
-        }
-        for argument in self.arguments.iter().skip(1) {
+        write!(f, "{}", self.name)?;
+        for argument in &self.arguments {
             write!(f, " {argument}")?;
         }
         Ok(())
@@ -63,19 +88,27 @@ impl Node for Process {
 
 impl Process {
     fn from_sysinfo_process(process: &sysinfo::Process) -> Self {
+        let mut command_words = process.cmd().to_vec().into_iter();
         Process {
             pid: process.pid(),
-            name: match process.exe() {
-                Some(exe) => match exe.file_name() {
+            name: match command_words.next() {
+                Some(executable) => match Path::new(&executable).file_name() {
                     Some(file_name) => file_name.to_string_lossy().to_string(),
-                    None => exe.to_string_lossy().to_string(),
+                    None => executable,
                 },
-                None => process.name().to_string(),
+                None => match process.exe() {
+                    Some(exe) => match exe.file_name() {
+                        Some(file_name) => file_name.to_string_lossy().to_string(),
+                        None => exe.to_string_lossy().to_string(),
+                    },
+                    None => process.name().to_string(),
+                },
             },
-            arguments: process.cmd().to_vec(),
+            arguments: command_words.collect(),
             parent: process.parent(),
             cpu: process.cpu_usage(),
             ram: process.memory(),
+            visible: Visible::default(),
         }
     }
 
@@ -91,17 +124,40 @@ impl Process {
         }
     }
 
-    pub(crate) fn is_match(&self, pattern: &Regex, treetop_pid: Pid, args: &Args) -> bool {
-        if pattern.is_match(&self.name) {
-            return true;
+    pub(crate) fn update_visible(&mut self, pattern: &SearchPattern, args: &Args) {
+        self.visible = {
+            if let SearchPattern::Empty = pattern {
+                Visible::Visible(Vec::new())
+            } else {
+                let matches =
+                    self.get_matches(pattern, sysinfo::Pid::from_u32(std::process::id()), args);
+                if matches.is_empty() {
+                    Visible::NotVisible
+                } else {
+                    Visible::Visible(matches)
+                }
+            }
         }
-        if pattern.is_match(&self.id().to_string()) {
-            return true;
+    }
+
+    fn get_matches(&self, pattern: &SearchPattern, treetop_pid: Pid, args: &Args) -> Vec<Match> {
+        let mut result = Vec::new();
+        for range in pattern.find(&self.id().to_string()) {
+            result.push(Match::InPid(range));
         }
-        if pattern.is_match(&self.arguments.join(" ")) {
-            return args.dont_hide_self || treetop_pid != self.id();
+        let mut command = self.name.clone();
+        for argument in &self.arguments {
+            command += " ";
+            command += argument;
         }
-        false
+        for range in pattern.find(&command) {
+            if treetop_pid == self.id() && !args.dont_hide_self && range.end > self.name.len() {
+                // hide treetop
+            } else {
+                result.push(Match::InCommand(range));
+            }
+        }
+        result
     }
 
     pub(crate) fn render_header(area: Rect, sort_by: SortBy, buffer: &mut Buffer) -> u16 {
@@ -152,13 +208,28 @@ impl Process {
         2
     }
 
-    pub(crate) fn table_data(&self) -> String {
-        format!(
-            "{:>8} {:>4.0}% {:>7}MB",
-            self.pid.as_u32(),
-            self.cpu,
-            (self.ram / 2_u64.pow(20)).to_formatted_string(&Locale::en)
-        )
+    pub(crate) fn table_data(&self) -> Vec<Span<'static>> {
+        let mut result: Vec<Span> = Vec::new();
+        let pid = self.pid.as_u32().to_string();
+        result.push(" ".repeat(8 - pid.len()).into());
+        let pid_spans = style_spans(
+            vec![pid.into()],
+            self.visible.matches().filter_map(|m| match m {
+                Match::InPid(range) => Some(range.clone()),
+                Match::InCommand(_) => None,
+            }),
+            highlight_style(),
+        );
+        result.extend(pid_spans);
+        result.push(format!(" {:>4.0}%", self.cpu).into());
+        result.push(
+            format!(
+                " {:>7}MB",
+                (self.ram / 2_u64.pow(20)).to_formatted_string(&Locale::en)
+            )
+            .into(),
+        );
+        result
     }
 }
 
@@ -244,19 +315,24 @@ impl ProcessWatcher {
 #[cfg(test)]
 pub(crate) mod test {
     use super::*;
-    use crate::R;
     use std::string::ToString;
 
     impl Process {
         pub(crate) fn fake(pid: usize, cpu: f32, parent: Option<usize>) -> Process {
             Process {
                 pid: pid.into(),
-                name: crate::utils::test::render_number(pid).to_string(),
+                name: crate::utils::test_utils::render_number(pid).to_string(),
                 arguments: Vec::new(),
                 parent: parent.map(From::from),
                 cpu,
                 ram: 0,
+                visible: Visible::default(),
             }
+        }
+
+        pub(crate) fn set_name(mut self, name: &str) -> Self {
+            self.name = name.to_string();
+            self
         }
 
         pub(crate) fn set_arguments(mut self, arguments: Vec<&str>) -> Self {
@@ -274,6 +350,7 @@ pub(crate) mod test {
                 parent: None,
                 cpu: 0.0,
                 ram: 0,
+                visible: Visible::default(),
             }
         }
     }
@@ -288,66 +365,118 @@ pub(crate) mod test {
         use super::*;
 
         #[test]
-        fn is_match_considers_arguments() -> R<()> {
-            assert!(Process::default().set_arguments(vec!["foo"]).is_match(
-                &Regex::new("foo")?,
-                0.into(),
-                &Args::default()
-            ));
-            assert!(!Process::default().set_arguments(vec!["foo"]).is_match(
-                &Regex::new("bar")?,
-                0.into(),
-                &Args::default()
-            ));
+        fn is_match_considers_arguments() {
+            assert!(!Process::default()
+                .set_arguments(vec!["foo"])
+                .get_matches(
+                    &SearchPattern::from_string("foo"),
+                    0.into(),
+                    &Args::default()
+                )
+                .is_empty());
             assert!(Process::default()
+                .set_arguments(vec!["foo"])
+                .get_matches(
+                    &SearchPattern::from_string("bar"),
+                    0.into(),
+                    &Args::default()
+                )
+                .is_empty());
+            assert!(!Process::default()
                 .set_arguments(vec!["foobarbaz"])
-                .is_match(&Regex::new("bar")?, 0.into(), &Args::default()));
-            Ok(())
+                .get_matches(
+                    &SearchPattern::from_string("bar"),
+                    0.into(),
+                    &Args::default()
+                )
+                .is_empty());
         }
 
         #[test]
-        fn filtering_by_matching_on_multiple_process_arguments() -> R<()> {
-            assert!(Process::default()
+        fn filtering_by_matching_on_multiple_process_arguments() {
+            assert!(!Process::default()
                 .set_arguments(vec!["foo", "bar"])
-                .is_match(&Regex::new("fo.*ar")?, 0.into(), &Args::default()));
-            assert!(Process::default()
+                .get_matches(
+                    &SearchPattern::from_string("fo.*ar"),
+                    0.into(),
+                    &Args::default()
+                )
+                .is_empty());
+            assert!(!Process::default()
                 .set_arguments(vec!["foo", "bar"])
-                .is_match(&Regex::new("foo bar")?, 0.into(), &Args::default()));
-            Ok(())
+                .get_matches(
+                    &SearchPattern::from_string("foo bar"),
+                    0.into(),
+                    &Args::default()
+                )
+                .is_empty());
+            assert!(!Process::default()
+                .set_name("foo")
+                .set_arguments(vec!["bar"])
+                .get_matches(
+                    &SearchPattern::from_string("foo bar"),
+                    0.into(),
+                    &Args::default()
+                )
+                .is_empty());
         }
 
         #[test]
-        fn is_match_hides_treetop_for_arguments() -> R<()> {
+        fn is_match_hides_treetop_for_arguments() {
             let process = Process {
                 pid: 42.into(),
                 name: "treetop".to_string(),
                 arguments: vec!["foo".to_string()],
                 ..Process::default()
             };
-            assert!(!process.is_match(&Regex::new("foo")?, 42.into(), &Args::default()));
-            assert!(process.is_match(&Regex::new("foo")?, 43.into(), &Args::default()));
-            assert!(process.is_match(&Regex::new("treetop")?, 42.into(), &Args::default()));
-            assert!(process.is_match(&Regex::new("42")?, 42.into(), &Args::default()));
-            Ok(())
+            assert!(process
+                .get_matches(
+                    &SearchPattern::from_string("foo"),
+                    42.into(),
+                    &Args::default()
+                )
+                .is_empty());
+            assert!(!process
+                .get_matches(
+                    &SearchPattern::from_string("foo"),
+                    43.into(),
+                    &Args::default()
+                )
+                .is_empty());
+            assert!(!process
+                .get_matches(
+                    &SearchPattern::from_string("treetop"),
+                    42.into(),
+                    &Args::default()
+                )
+                .is_empty());
+            assert!(!process
+                .get_matches(
+                    &SearchPattern::from_string("42"),
+                    42.into(),
+                    &Args::default()
+                )
+                .is_empty());
         }
 
         #[test]
-        fn is_match_shows_treetop_when_asked_to() -> R<()> {
+        fn is_match_shows_treetop_when_asked_to() {
             let process = Process {
                 pid: 42.into(),
                 name: "treetop".to_string(),
                 arguments: vec!["foo".to_string()],
                 ..Process::default()
             };
-            assert!(process.is_match(
-                &Regex::new("foo")?,
-                42.into(),
-                &Args {
-                    dont_hide_self: true,
-                    ..Args::default()
-                }
-            ));
-            Ok(())
+            assert!(!process
+                .get_matches(
+                    &SearchPattern::from_string("foo"),
+                    42.into(),
+                    &Args {
+                        dont_hide_self: true,
+                        ..Args::default()
+                    }
+                )
+                .is_empty());
         }
     }
 }
