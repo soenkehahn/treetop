@@ -4,9 +4,9 @@ expression: render_ui(&mut app)
 ---
      p͟i͟d͟   cpu       ram ┃ executable                                           
 ━━━━━━━━━━━━━━━━━━━━━━━━━╋━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-       1    0%       0MB ┃ ▶ one                                                
-       2    0%       0MB ┃   ├── t͟w͟o͟                                            
-       3    0%       0MB ┃   └── t͟h͟r͟e͟e͟                                          
+     1͟2͟3͟    0%       0MB ┃ ▶ some-process 1͟2͟3͟                                   
+                                                                                
+                                                                                
                                                                                 
                                                                                 
                                                                                 

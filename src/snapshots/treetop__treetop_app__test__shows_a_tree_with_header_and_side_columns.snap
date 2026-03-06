@@ -1,6 +1,6 @@
 ---
 source: src/treetop_app.rs
-expression: render_ui(app)
+expression: render_ui(&mut app)
 ---
      p͟i͟d͟   cpu       ram ┃ executable                                           
 ━━━━━━━━━━━━━━━━━━━━━━━━━╋━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

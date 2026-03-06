@@ -5,7 +5,7 @@ use std::error::Error;
 use sysinfo::System;
 
 mod process;
-mod regex;
+mod search_pattern;
 mod tree;
 mod treetop_app;
 mod tui_app;
@@ -39,7 +39,7 @@ fn main() -> R<()> {
     if args.help {
         Args::command().print_long_help()?;
     } else {
-        TreetopApp::run(TreetopApp::new(ProcessWatcher::new(System::new()), args)?)?;
+        TreetopApp::run(TreetopApp::new(ProcessWatcher::new(System::new()), args))?;
     }
     Ok(())
 }
