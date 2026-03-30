@@ -88,7 +88,6 @@ impl TreetopApp {
 impl tui_app::TuiApp for TreetopApp {
     fn update(&mut self, event: KeyEvent) -> R<UpdateResult> {
         self.error_state = None;
-        #[allow(clippy::match_same_arms)]
         match (event.modifiers, self.ui_mode, event.code) {
             (KeyModifiers::CONTROL, _, KeyCode::Char('c'))
             | (KeyModifiers::NONE, UiMode::Normal, KeyCode::Char('q')) => {
