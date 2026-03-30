@@ -4,6 +4,7 @@ use clap::{CommandFactory, Parser};
 use std::error::Error;
 use sysinfo::System;
 
+mod help_popup;
 mod process;
 mod search_pattern;
 mod tree;

@@ -1,3 +1,4 @@
+use crate::help_popup::HelpPopup;
 use crate::process::Match;
 use crate::process::ProcessWatcher;
 use crate::process::SortBy;
@@ -42,6 +43,7 @@ enum UiMode {
     Normal,
     EditingPattern,
     ProcessSelected(sysinfo::Pid),
+    Help,
 }
 
 impl TreetopApp {
@@ -85,96 +87,180 @@ impl TreetopApp {
     }
 }
 
-impl tui_app::TuiApp for TreetopApp {
-    fn update(&mut self, event: KeyEvent) -> R<UpdateResult> {
-        self.error_state = None;
+struct Action {
+    action: Box<dyn FnOnce(&mut TreetopApp) -> R<UpdateResult>>,
+    description: Option<String>,
+}
+
+impl TreetopApp {
+    fn action_for_event(&self, event: KeyEvent) -> Option<Action> {
         match (event.modifiers, self.ui_mode, event.code) {
             (KeyModifiers::CONTROL, _, KeyCode::Char('c'))
-            | (KeyModifiers::NONE, UiMode::Normal, KeyCode::Char('q')) => {
-                return Ok(UpdateResult::Exit);
-            }
-            (KeyModifiers::NONE, _, KeyCode::Up) => {
-                self.list_state.select(Some(
-                    self.list_state.selected().unwrap_or(0).saturating_sub(1),
-                ));
-            }
-            (KeyModifiers::NONE, _, KeyCode::PageUp) => {
-                self.list_state.select(Some(
-                    self.list_state.selected().unwrap_or(0).saturating_sub(20),
-                ));
-            }
-            (KeyModifiers::NONE, _, KeyCode::Down) => {
-                self.list_state.select(Some(
-                    self.list_state.selected().unwrap_or(0).saturating_add(1),
-                ));
-            }
-            (KeyModifiers::NONE, _, KeyCode::PageDown) => {
-                self.list_state.select(Some(
-                    self.list_state.selected().unwrap_or(0).saturating_add(20),
-                ));
-            }
-            (KeyModifiers::NONE, UiMode::EditingPattern, KeyCode::Enter) => {
-                self.ui_mode = UiMode::Normal;
-            }
-            (KeyModifiers::NONE, _, KeyCode::Enter) => {
-                if let Some(selected) = self.list_state.selected() {
-                    if let Some(process) = self
-                        .forest
-                        .render_forest_prefixes()
-                        .into_iter()
-                        .nth(selected)
-                    {
-                        self.ui_mode = UiMode::ProcessSelected(process.node.id());
+            | (KeyModifiers::NONE, UiMode::Normal, KeyCode::Char('q')) => Some(Action {
+                action: Box::new(|_| Ok(UpdateResult::Exit)),
+                description: Some("Quit".to_string()),
+            }),
+            (KeyModifiers::NONE, _, KeyCode::Up) => Some(Action {
+                action: Box::new(|app| {
+                    app.list_state.select(Some(
+                        app.list_state.selected().unwrap_or(0).saturating_sub(1),
+                    ));
+                    Ok(UpdateResult::Continue)
+                }),
+                description: Some("Scroll up".to_string()),
+            }),
+            (KeyModifiers::NONE, _, KeyCode::PageUp) => Some(Action {
+                action: Box::new(|app| {
+                    app.list_state.select(Some(
+                        app.list_state.selected().unwrap_or(0).saturating_sub(20),
+                    ));
+                    Ok(UpdateResult::Continue)
+                }),
+                description: Some("Page up".to_string()),
+            }),
+            (KeyModifiers::NONE, _, KeyCode::Down) => Some(Action {
+                action: Box::new(|app| {
+                    app.list_state.select(Some(
+                        app.list_state.selected().unwrap_or(0).saturating_add(1),
+                    ));
+                    Ok(UpdateResult::Continue)
+                }),
+                description: Some("Scroll down".to_string()),
+            }),
+            (KeyModifiers::NONE, _, KeyCode::PageDown) => Some(Action {
+                action: Box::new(|app| {
+                    app.list_state.select(Some(
+                        app.list_state.selected().unwrap_or(0).saturating_add(20),
+                    ));
+                    Ok(UpdateResult::Continue)
+                }),
+                description: Some("Page down".to_string()),
+            }),
+            (KeyModifiers::NONE, UiMode::EditingPattern, KeyCode::Enter) => Some(Action {
+                action: Box::new(|app| {
+                    app.ui_mode = UiMode::Normal;
+                    Ok(UpdateResult::Continue)
+                }),
+                description: Some("Stop editing".to_string()),
+            }),
+            (KeyModifiers::NONE, _, KeyCode::Enter) => Some(Action {
+                action: Box::new(|app| {
+                    if let Some(selected) = app.list_state.selected() {
+                        if let Some(process) = app
+                            .forest
+                            .render_forest_prefixes()
+                            .into_iter()
+                            .nth(selected)
+                        {
+                            app.ui_mode = UiMode::ProcessSelected(process.node.id());
+                        }
                     }
-                }
-            }
-            (KeyModifiers::NONE, _, KeyCode::Char('/')) => {
-                self.ui_mode = UiMode::EditingPattern;
-            }
-            (KeyModifiers::NONE, _, KeyCode::Tab) => {
-                self.sort_column = self.sort_column.next();
-            }
+                    Ok(UpdateResult::Continue)
+                }),
+                description: Some("Select process".to_string()),
+            }),
+            (KeyModifiers::NONE, _, KeyCode::Char('/')) => Some(Action {
+                action: Box::new(|app| {
+                    app.ui_mode = UiMode::EditingPattern;
+                    Ok(UpdateResult::Continue)
+                }),
+                description: Some("Filter processes".to_string()),
+            }),
+            (KeyModifiers::NONE, _, KeyCode::Tab) => Some(Action {
+                action: Box::new(|app| {
+                    app.sort_column = app.sort_column.next();
+                    Ok(UpdateResult::Continue)
+                }),
+                description: Some("Change sort column".to_string()),
+            }),
+            (KeyModifiers::NONE, UiMode::Normal, KeyCode::Char('?')) => Some(Action {
+                action: Box::new(|app| {
+                    app.ui_mode = UiMode::Help;
+                    Ok(UpdateResult::Continue)
+                }),
+                description: Some("Show help".to_string()),
+            }),
 
             // mode specific actions
-            (
-                KeyModifiers::NONE,
-                UiMode::EditingPattern | UiMode::ProcessSelected(_),
-                KeyCode::Esc,
-            ) => {
-                self.ui_mode = UiMode::Normal;
-            }
+            (KeyModifiers::NONE, UiMode::Help, KeyCode::Esc) => Some(Action {
+                action: Box::new(|app| {
+                    app.ui_mode = UiMode::Normal;
+                    Ok(UpdateResult::Continue)
+                }),
+                description: Some("Close help".to_string()),
+            }),
+            (KeyModifiers::NONE, UiMode::EditingPattern, KeyCode::Esc) => Some(Action {
+                action: Box::new(|app| {
+                    app.ui_mode = UiMode::Normal;
+                    Ok(UpdateResult::Continue)
+                }),
+                description: Some("Stop editing".to_string()),
+            }),
+            (KeyModifiers::NONE, UiMode::ProcessSelected(_), KeyCode::Esc) => Some(Action {
+                action: Box::new(|app| {
+                    app.ui_mode = UiMode::Normal;
+                    Ok(UpdateResult::Continue)
+                }),
+                description: Some("Unselect process".to_string()),
+            }),
             (KeyModifiers::NONE, UiMode::EditingPattern, KeyCode::Char(key)) if key.is_ascii() => {
-                self.pattern.modify(|pattern| pattern.push(key));
+                Some(Action {
+                    action: Box::new(move |app| {
+                        app.pattern.modify(|pattern| pattern.push(key));
+                        Ok(UpdateResult::Continue)
+                    }),
+                    description: None,
+                })
             }
-            (KeyModifiers::NONE, UiMode::EditingPattern, KeyCode::Backspace) => {
-                self.pattern.modify(|pattern| {
-                    pattern.pop();
-                });
-            }
+            (KeyModifiers::NONE, UiMode::EditingPattern, KeyCode::Backspace) => Some(Action {
+                action: Box::new(|app| {
+                    app.pattern.modify(|pattern| {
+                        pattern.pop();
+                    });
+                    Ok(UpdateResult::Continue)
+                }),
+                description: None,
+            }),
             (
                 KeyModifiers::NONE,
                 UiMode::ProcessSelected(pid),
                 KeyCode::Char(char @ ('t' | 'k')),
             ) => {
-                match kill(
-                    nix::unistd::Pid::from_raw(pid.as_u32().try_into()?),
-                    match char {
-                        't' => nix::sys::signal::Signal::SIGTERM,
-                        'k' => nix::sys::signal::Signal::SIGKILL,
-                        _ => unreachable!("should be 't' or 'k'"),
-                    },
-                ) {
-                    Ok(()) => {}
-                    Err(Errno::EPERM) => {
-                        self.error_state = Some("missing permissions to send signal".to_string());
-                    }
-                    Err(e) => Err(e)?,
-                }
+                let signal = match char {
+                    't' => nix::sys::signal::Signal::SIGTERM,
+                    'k' => nix::sys::signal::Signal::SIGKILL,
+                    _ => unreachable!("should be 't' or 'k'"),
+                };
+                Some(Action {
+                    action: Box::new(move |app| {
+                        match kill(nix::unistd::Pid::from_raw(pid.as_u32().try_into()?), signal) {
+                            Ok(()) => {}
+                            Err(Errno::EPERM) => {
+                                app.error_state =
+                                    Some("missing permissions to send signal".to_string());
+                            }
+                            Err(e) => Err(e)?,
+                        }
+                        Ok(UpdateResult::Continue)
+                    }),
+                    description: Some(format!("Send {signal} to process")),
+                })
             }
-            _ => {}
+            _ => None,
         }
+    }
+}
+
+impl tui_app::TuiApp for TreetopApp {
+    fn update(&mut self, event: KeyEvent) -> R<UpdateResult> {
+        self.error_state = None;
+        let result = if let Some(action) = self.action_for_event(event) {
+            (action.action)(self)?
+        } else {
+            UpdateResult::Continue
+        };
         self.update_processes();
-        Ok(UpdateResult::Continue)
+        Ok(result)
     }
 
     fn render(&mut self, area: Rect, buffer: &mut Buffer) {
@@ -271,10 +357,11 @@ impl tui_app::TuiApp for TreetopApp {
                     }
                     commands.join(" | ")
                 }
+                UiMode::Help => "ESC: close help".to_string(),
             };
             let mut status_bar = Paragraph::new(status_bar).reversed();
             match self.ui_mode {
-                UiMode::Normal => {}
+                UiMode::Normal | UiMode::Help => {}
                 UiMode::EditingPattern => {
                     status_bar = status_bar.yellow();
                 }
@@ -291,6 +378,10 @@ impl tui_app::TuiApp for TreetopApp {
                 },
                 buffer,
             );
+        }
+
+        if self.ui_mode == UiMode::Help {
+            HelpPopup.render(area, buffer);
         }
     }
 
@@ -653,6 +744,14 @@ mod test {
         assert_snapshot!(render_ui(&mut app));
         simulate_key_press(&mut app, KeyCode::Char('&'))?;
         assert_eq!(app.error_state, None);
+        Ok(())
+    }
+
+    #[test]
+    fn help_popup_in_normal_mode() -> R<()> {
+        let mut app = test_app(vec![Process::fake(1, 0.0, None)]);
+        simulate_key_press(&mut app, KeyCode::Char('?'))?;
+        assert_snapshot!(render_ui(&mut app));
         Ok(())
     }
 }
