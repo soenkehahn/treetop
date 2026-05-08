@@ -42,9 +42,17 @@
             cargoClippyExtraArgs = "--all-targets -- -Dwarnings";
           });
         };
-        devShells.default = craneLib.devShell {
-          packages = [ pkgs.rust-analyzer pkgs.cargo-insta ];
-        };
+        devShells.default =
+          let
+            coverage = pkgs.writeShellScriptBin "coverage" ''
+              cargo llvm-cov --ignore-filename-regex='rustc|\.cargo' "$@"
+            '';
+          in
+          craneLib.devShell {
+            packages = [ pkgs.rust-analyzer pkgs.cargo-insta pkgs.cargo-llvm-cov coverage ];
+            LLVM_COV = "${pkgs.llvmPackages.bintools-unwrapped}/bin/llvm-cov";
+            LLVM_PROFDATA = "${pkgs.llvmPackages.bintools-unwrapped}/bin/llvm-profdata";
+          };
       }
     );
 }
